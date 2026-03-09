@@ -135,7 +135,7 @@ Continuations at the User Level
 
 ---
 
-## Slide 8: IO as a Data Structure
+## Slide 8: IO — Describing a Program as Data
 
 - In Scala, we can **describe** a computation without executing it
 - The `IO` monad is an **ADT** — a tree of instructions
@@ -149,13 +149,7 @@ enum IO[+A]:
 
 - `Pure` — a completed computation (a value)
 - `Delay` — a lazy computation (a thunk)
-- `FlatMap` — a computation followed by **a continuation**
-
-> **Speaker notes:** Here's where Scala shines. In the effect system approach, we don't run code immediately. We build a data structure that DESCRIBES the computation. Look at FlatMap: it stores an IO and a function `A => IO[B]`. That function IS the continuation — it's literally "what to do next with the result".
-
----
-
-## Slide 9: FlatMap IS a Continuation
+- `FlatMap` — a computation followed by **what to do next**: a function `A => IO[B]`
 
 ```scala
 extension [A](io: IO[A])
@@ -166,31 +160,41 @@ object IO:
   def delay[A](thunk: => A): IO[A] = Delay(() => thunk)
 ```
 
-- Every call to `flatMap` **stores a continuation** in the data structure
-- A program is a **chain of continuations**
+> **Speaker notes:** Here's where Scala shines. In the effect system approach, we don't run code immediately. We build a data structure that DESCRIBES the computation. Look at FlatMap: it stores an IO and a function `A => IO[B]`. That function is "what to do next with the result." Each flatMap call adds a link to the chain. But — and this is important — this is just a description. A sequential program as data. It doesn't solve our concurrency problem yet. Let's see why.
+
+---
+
+## Slide 9: FlatMap Chains — Sequential, Not Yet Concurrent
+
+- A program built with `flatMap` is a **chain of steps**
 
 ```scala
-val morningRoutine: IO[Unit] =
+val bathTime: IO[Unit] =
   IO.delay(println("Going to the bathroom"))
-    .flatMap(_ => IO.delay(sleep(500)))       // continuation 1
-    .flatMap(_ => IO.delay(println("Done!"))) // continuation 2
+    .flatMap(_ => IO.delay(Thread.sleep(500)))  // step 2
+    .flatMap(_ => IO.delay(println("Done!")))   // step 3
 ```
 
 ```
 FlatMap
 ├── FlatMap
 │   ├── Delay(() => println("Going to the bathroom"))
-│   └── cont₁: _ => Delay(() => sleep(500))
-└── cont₂: _ => Delay(() => println("Done!"))
+│   └── step₂: _ => Delay(() => Thread.sleep(500))
+└── step₃: _ => Delay(() => println("Done!"))
 ```
 
-> **Speaker notes:** Look at this. When we write flatMap, we're not executing anything. We're building a tree. Each flatMap node stores the continuation — the function that takes the previous result and produces the next computation. This is CPS made explicit as a data structure. The program IS a chain of continuations.
+- Each `flatMap` stores "what to do next" — that's a **continuation** in the CS sense
+- But this chain is **purely sequential**: run step 1, then step 2, then step 3
+- If step 2 blocks (e.g., `Thread.sleep`), the thread is **still blocked**
+- We have continuations, but we're **not using them for concurrency yet**
+
+> **Speaker notes:** Look at this tree. Each flatMap stores a function — what to do next. That IS a continuation in the computer science sense. But here's the thing: if we just interpret this chain top to bottom, it's no different from regular sequential code. When we hit Thread.sleep, the thread blocks. We haven't solved anything yet. We have the building blocks — a program described as data with explicit "next steps" — but we need one more ingredient to actually suspend and resume.
 
 ---
 
-## Slide 10: The Run Loop — Interpreting Continuations
+## Slide 10: The Run Loop — A Trampoline on the Heap
 
-- The runtime **interprets** the IO tree, using a **trampoline**
+- The runtime **interprets** the IO tree using a **trampoline**
 
 ```scala
 def unsafeRun[A](io: IO[A]): A =
@@ -214,15 +218,17 @@ def unsafeRun[A](io: IO[A]): A =
 ```
 
 - The **stack of continuations** lives on the **heap**, not on the thread stack
-- This is the key: we moved the execution state from the thread stack to a data structure **we control**
+- This is important: the execution state is now a data structure **we control**
+- We can **pause** it, **save** it, and **resume** it later — if we add a way to suspend
 
-> **Speaker notes:** Here's the interpreter. Instead of using recursive calls (which eat thread stack), we use a while loop and an explicit stack of continuations on the heap. When we hit a FlatMap, we push the continuation onto our stack and process the inner IO. When we get a Pure value, we pop the next continuation and keep going. This is called trampolining — and it's the key trick. Our continuation stack is on the HEAP, not on the thread stack. We control it. We can pause it, resume it, move it to another thread. That's what makes fibers possible.
+> **Speaker notes:** Here's the interpreter. Instead of recursive calls that eat thread stack, we use a while loop and an explicit stack of continuations on the heap. FlatMap? Push the continuation, process the inner IO. Pure value? Pop the next continuation. This is trampolining. And here's the key insight: our execution state — the stack of "what to do next" — is now a regular object on the heap. We OWN it. We can pause this loop, save the stack, free the thread, and resume later. We have the infrastructure for suspension. We just need a way to trigger it.
 
 ---
 
-## Slide 11: Adding Suspension — The Async Case
+## Slide 11: Async — The Real Continuation
 
-- To **suspend** a fiber, we need a new IO case
+- The outside world is full of **callback-based APIs**: timers, sockets, HTTP clients, ...
+- `Async` is a **Foreign Function Interface** (FFI): it bridges callbacks into the IO world
 
 ```scala
 enum IO[+A]:
@@ -232,61 +238,78 @@ enum IO[+A]:
   case Async(register: (Either[Throwable, A] => Unit) => Unit)
 ```
 
-- `Async` captures a callback-based computation
-- When the run loop hits `Async`, it **suspends** the fiber
-  - The continuation stack is saved
-  - The thread is **freed** to run other fibers
-- When the callback fires, the fiber is **resumed**
+- The `register` function receives a **callback** `cb: Either[Throwable, A] => Unit`
+- The callback **IS the continuation** — it's how the async world tells our fiber: "I'm done, here's the result, **resume your computation**"
 
 ```scala
 def sleep(millis: Long): IO[Unit] =
-  IO.Async { callback =>
+  IO.Async { cb =>                          // cb is the continuation!
     scheduler.schedule(
-      () => callback(Right(())),
+      () => cb(Right(())),                  // "I'm done, resume the fiber"
       millis,
       TimeUnit.MILLISECONDS
     )
   }
+
+// Converting a Future — same pattern
+def fromFuture[A](future: => Future[A]): IO[A] =
+  IO.Async { cb =>
+    future.onComplete {
+      case Success(a) => cb(Right(a))       // Resume with value
+      case Failure(e) => cb(Left(e))        // Resume with error
+    }
+  }
 ```
 
-> **Speaker notes:** But our IO can only run synchronously so far. To actually yield a thread, we need Async. When the run loop hits an Async, it registers the callback and STOPS executing. The fiber is parked. The thread is free to pick up another fiber. When the callback eventually fires — say a timer, or an I/O completion — the fiber gets rescheduled. This is the suspension mechanism.
+- When the run loop hits `Async`:
+  1. It **stops** the trampoline — the continuation stack stays on the heap
+  2. It **frees the thread** — the thread can run other fibers
+  3. When `cb` is called, the fiber is **rescheduled** with its saved continuations
+- `FlatMap` builds the chain; `Async` is where we **cut it**, free the thread, and **resume later**
+
+> **Speaker notes:** HERE is where the continuation pattern actually solves our concurrency problem. Async is an FFI — a Foreign Function Interface. The outside world speaks in callbacks: Future.onComplete, timer.schedule, socket.read. Async bridges that world into IO. And look at the callback `cb` — it's the continuation! It's "what to do when the async operation completes." When the run loop hits Async, it hands `cb` to the external API and STOPS. The thread walks away. The continuation stack sits on the heap, waiting. When the external operation completes, it calls `cb`, which re-submits the fiber to the scheduler with its full continuation stack. The fiber resumes exactly where it left off. FlatMap gave us the structure — a program described as data. Async gives us the actual continuation — the bridge between the callback world and our fiber world.
 
 ---
 
-## Slide 12: Fibers — Lightweight Threads
+## Slide 12: Fibers — Putting It All Together
 
-- A **Fiber** wraps an IO with its own continuation stack
-- Fibers are **cheap** — just objects on the heap
+- A **Fiber** is the sum of everything we've built:
+  - An **IO program** described as data (slides 8-9)
+  - A **continuation stack** on the heap — the trampoline (slide 10)
+  - The ability to **suspend via Async** and resume via callback (slide 11)
+- It's just an object on the heap — **lightweight**, not an OS thread
 
 ```scala
 class IOFiber[A](io: IO[A], scheduler: Scheduler):
-  private var currentIO: IO[Any] = io
-  private val continuations = Stack[Any => IO[Any]]()
+  private var currentIO: IO[Any] = io                   // The current step
+  private val continuations = Stack[Any => IO[Any]]()   // What to do next
 
   def run(): Unit =
     currentIO match
       case Pure(value) =>
         if continuations.nonEmpty then
           currentIO = continuations.pop()(value)
-          scheduler.submit(this) // Reschedule, don't recurse
-        // else: fiber completed
+          scheduler.submit(this)              // Continue on the thread pool
       case Delay(thunk) =>
         currentIO = Pure(thunk())
         scheduler.submit(this)
       case FlatMap(inner, cont) =>
-        continuations.push(cont)
+        continuations.push(cont)              // Save the continuation
         currentIO = inner
         scheduler.submit(this)
       case Async(register) =>
-        register {
+        register {                            // Suspend! Free the thread
           case Right(value) =>
             currentIO = Pure(value)
-            scheduler.submit(this) // Resume the fiber
+            scheduler.submit(this)            // Resume when callback fires
           case Left(error) => /* handle error */
         }
 ```
 
-> **Speaker notes:** A Fiber is simply our IO plus a continuation stack. Notice something crucial: after each step, the fiber re-submits itself to the scheduler instead of looping. This is cooperative scheduling — the fiber voluntarily yields control after each step, giving other fibers a chance to run. And when it hits Async, it truly suspends — no thread is held.
+- After each step, the fiber **re-submits itself** to the scheduler — **cooperative scheduling**
+- At `Async`, the fiber truly **suspends**: no thread is held, the callback will resume it
+
+> **Speaker notes:** And now everything comes together. A Fiber is the combination of all the pieces we've built. It holds the IO program — our data structure. It has a continuation stack — the "what to do next" chain, living on the heap. And it can suspend via Async — freeing the thread when it hits an I/O boundary. Look at the run method: it's our trampoline from slide 10, but now it re-submits itself to the scheduler after each step instead of looping. That's cooperative scheduling — the fiber voluntarily yields, giving other fibers a chance. And when it hits Async, it truly parks. The thread walks away. The callback will wake it up later. A fiber is cheap — it's just an object. You can create millions of them. Each one carries its own continuation stack. That's the Scala approach: we built the entire continuation machinery ourselves, in user space.
 
 ---
 
