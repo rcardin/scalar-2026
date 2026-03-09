@@ -1,14 +1,14 @@
-# The Concurrency Triangle: Scala Fibers, Java Virtual Threads, and Kotlin Coroutines - Scalar 2026
+# The Concurrency Triangle: Scala Fibers, Java Virtual Threads, and Kotlin Coroutines
 
-Scala Fibers, Java Virtual Threads, and Kotlin Coroutines - this talk shows how this elegant solution manifests at three different abstraction levels.
+Scala Fibers, Java Virtual Threads, and Kotlin Coroutines: this talk shows how this elegant solution manifests at three different abstraction levels.
 
 ## Abstract
 
-Operating system thread context switches are a fundamental bottleneck in high-concurrency JVM applications. Each switch requires kernel transitions, CPU cache invalidation, and scheduling overhead. The JVM ecosystem has developed three prominent solutions: Fibers as implemented by many Scala monadic effect systems, Java Virtual Threads (Project Loom), and Kotlin Coroutines.
+Operating system thread context switches are a fundamental bottleneck in high-concurrency JVM applications. Each switch requires kernel transitions, CPU cache invalidation, and scheduling overhead. The JVM ecosystem has developed three prominent solutions: Fibers, as implemented by many Scala monadic effect systems; Java Virtual Threads (Project Loom); and Kotlin Coroutines.
 
 While these technologies appear vastly different on the surface, functional versus imperative, library versus runtime, they actually implement the same core pattern: replacing OS thread scheduling with user-space scheduling of continuations.
 
-This talk shows how this elegant solution manifests at three different abstraction levels. We'll take the Cats Effect library as an example of Fibers implementation library through the IO monad. Project Loom pushes it down to the JVM runtime, making it transparent to developers. In Scala, the Ox library is built upon virtual threads. Kotlin Coroutines place it at compile time through the transformation of suspend functions. We'll see them as different expressions of the same fundamental breakthrough in concurrent programming.
+This talk shows how this elegant solution manifests at three different abstraction levels. We'll take the Cats Effect library as an example of Fibers implementation library through the IO monad. Project Loom pushes it down to the JVM runtime, making it transparent to developers. In Scala, the Ox library is built upon virtual threads. Kotlin Coroutines place it at compile time by transforming suspend functions. We'll see them as different expressions of the same fundamental breakthrough in concurrent programming.
 
 ## References
  * [How do Fibers Work? A Peek Under the Hood](https://www.youtube.com/watch?v=x5_MmZVLiSM)
