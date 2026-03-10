@@ -393,10 +393,9 @@ Continuations at Compile Time
 
 ---
 
-## Slide 17: The Compiler Does It For You
+## Slide 17: The Compiler Rewrites Your Code
 
-- In Kotlin, you write a **`suspend` function** — the compiler does the rest
-- The compiler transforms it into a **state machine** with an explicit **continuation**
+- You write a **`suspend` function** — the compiler transforms it
 
 ```kotlin
 // What you write
@@ -407,28 +406,84 @@ suspend fun bathTime() {
 }
 ```
 
+- The compiler does **two things**:
+  1. Adds a `Continuation` parameter — the continuation of **the caller**
+  2. Splits the body at every **suspension point** (call to another `suspend fun`)
+
 ```kotlin
-// What the compiler generates
+// What the compiler generates (simplified)
 fun bathTime(callerContinuation: Continuation<*>): Any {
-  val continuation = callerContinuation as? BathTimeContinuation
-    ?: BathTimeContinuation(callerContinuation)
-  if (continuation.label == 0) {
+  val sm = callerContinuation as? BathTimeSM
+    ?: BathTimeSM(callerContinuation)
+  if (sm.label == 0) { /* ... */ }
+  if (sm.label == 1) { /* ... */ }
+}
+```
+
+> **Speaker notes:** Kotlin takes a completely different approach. You just mark a function as suspend, and the compiler rewrites it. Two key transformations: it adds a Continuation parameter — the caller's continuation — and it splits the function body at every suspension point. Each segment becomes a branch in a state machine. Let's see the full picture.
+
+---
+
+## Slide 18: The State Machine — Step by Step
+
+```kotlin
+fun bathTime(callerContinuation: Continuation<*>): Any {
+  val sm = callerContinuation as? BathTimeSM
+    ?: BathTimeSM(callerContinuation)     // ① Create state machine
+  if (sm.label == 0) {                     // ② First segment
     logger.info("Going to the bathroom")
-    continuation.label = 1
-    if (delay(500L, continuation) == COROUTINE_SUSPENDED)
-      return COROUTINE_SUSPENDED
+    sm.label = 1                           // ③ Set resume point
+    if (delay(500L, sm) == COROUTINE_SUSPENDED)
+      return COROUTINE_SUSPENDED           // ④ Yield the thread!
   }
-  if (continuation.label == 1) {
+  if (sm.label == 1) {                     // ⑤ Resumed here
     logger.info("Done with the bath")
   }
 }
 ```
 
-> **Speaker notes:** Kotlin takes a completely different approach. You just mark a function as `suspend`, and the compiler rewrites it. It adds a Continuation parameter — the continuation of the CALLER. It transforms the body into a state machine where each suspension point is a label. When delay suspends, the function returns COROUTINE_SUSPENDED and the thread is free. When the delay completes, the continuation's `resumeWith` is called, and the function re-enters at label 1. Same pattern — but the compiler builds the continuation for you.
+- **First call** (label = 0): runs segment 1, hits `delay`, returns `COROUTINE_SUSPENDED`
+- The thread is **free** — no blocking
+- **Second call** (label = 1): `delay` calls `sm.resumeWith()`, function **re-enters** at label 1
+- The `BathTimeSM` object holds the **state** between calls (label + local variables)
+
+> **Speaker notes:** Let's walk through it. First call: label is 0, we log "going to the bathroom", set label to 1, and call delay. delay is itself a suspend function — it returns COROUTINE_SUSPENDED. So bathTime also returns COROUTINE_SUSPENDED. The thread is free. Later, when the 500ms timer fires, delay calls sm.resumeWith(). This calls bathTime AGAIN with the same state machine object. But now label is 1, so we skip the first block and jump straight to "Done with the bath." The BathTimeSM object is the continuation — it carries the state between calls. Every local variable that needs to survive suspension is stored in it. The function is called multiple times, but the state machine makes it look like a single sequential execution.
 
 ---
 
-## Slide 18: Same Ingredients, Compiler-Generated
+## Slide 19: resumeWith — The Continuation in Action
+
+- `suspendCoroutine` is a **builder function**: it suspends the coroutine and provides the current `Continuation` to its block
+  - You decide **when** to resume by calling `resumeWith`
+  - It's Kotlin's equivalent of Scala's `Async` — an FFI to the callback world
+
+```kotlin
+suspend fun delay(ms: Long) = suspendCoroutine { continuation ->
+    Timer().schedule(object : TimerTask() {
+        override fun run() {
+            continuation.resumeWith(Result.success(Unit))
+        }
+    }, ms)
+}
+```
+
+- Same pattern as Scala's `Async`:
+
+```scala
+def sleep(millis: Long): IO[Unit] =
+  IO.Async { cb =>
+    scheduler.schedule(() => cb(Right(())), millis, MILLISECONDS)
+  }
+```
+
+- Both register a callback with an external API
+- When it fires, **resume the computation** — `resumeWith` / `cb`
+
+> **Speaker notes:** Here's where the parallel with Scala becomes crystal clear. Look at delay: it calls suspendCoroutine, which gives you the continuation object. You hand it to a Timer. When the timer fires, it calls continuation.resumeWith — that's the resume. Now look at Scala's sleep: Async gives you cb, you hand it to a scheduler, and when it fires, cb resumes the fiber. Same exact pattern. Register a callback, resume when done. The continuation is the callback in Scala, and the Continuation object in Kotlin. Different shapes, same role.
+
+---
+
+## Slide 20: Kotlin — Same Ingredients, Compiler-Generated
 
 | Ingredient     | Kotlin (Compile Time)                       |
 |----------------|---------------------------------------------|
@@ -453,7 +508,7 @@ public interface Continuation<in T> {
 
 ---
 
-## Slide 19: Section Divider — Java Virtual Threads
+## Slide 21: Section Divider — Java Virtual Threads
 
 ### 03
 
@@ -462,7 +517,7 @@ Continuations at Runtime
 
 ---
 
-## Slide 20: The JVM Does It For You
+## Slide 22: The JVM Does It For You
 
 - Java's approach: reuse the `Thread` API with a different implementation
 - `VirtualThread` wraps a `Continuation` object — a **private** JDK class
@@ -493,7 +548,7 @@ VirtualThread(Executor scheduler, String name, int characteristics, Runnable tas
 
 ---
 
-## Slide 21: Runtime Stack Manipulation
+## Slide 23: Runtime Stack Manipulation
 
 ```java
 Continuation cont = new Continuation(SCOPE, () -> {
@@ -523,7 +578,7 @@ cont.isDone();    // true
 
 ---
 
-## Slide 22: The Concurrency Triangle
+## Slide 24: The Concurrency Triangle
 
 ```
                     CONTINUATIONS
@@ -558,7 +613,7 @@ Three languages, three abstraction levels, **one pattern**: replacing OS thread 
 
 ---
 
-## Slide 23: References
+## Slide 25: References
 
 - [How do Fibers Work? A Peek Under the Hood](https://www.youtube.com/watch?v=x5_MmZVLiSM)
 - [Concurrency In Scala with Cats-Effect](https://github.com/slouc/concurrency-in-scala-with-ce)
@@ -574,7 +629,7 @@ Three languages, three abstraction levels, **one pattern**: replacing OS thread 
 
 ---
 
-## Slide 24: Thank You
+## Slide 26: Thank You
 
 **Riccardo Cardin**
 
@@ -589,7 +644,7 @@ Scalar 2026
 | 1-2     | Title + Agenda    | ~1 min   |
 | 3-6     | The Problem       | ~3 min   |
 | 7-15    | Scala Fibers      | ~8 min   |
-| 16-18   | Kotlin Coroutines | ~4 min   |
-| 19-21   | Java VT           | ~3 min   |
-| 22      | The Triangle      | ~1 min   |
-| 23-24   | References + End  | ~0 min   |
+| 16-20   | Kotlin Coroutines | ~4 min   |
+| 21-23   | Java VT           | ~3 min   |
+| 24      | The Triangle      | ~1 min   |
+| 25-26   | References + End  | ~0 min   |
