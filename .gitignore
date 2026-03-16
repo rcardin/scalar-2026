@@ -1,1 +1,15 @@
 Modern Concurrency on the JVM_ Continuations.pdf
+
+# sbt
+target/
+project/target/
+project/project/
+
+.bloop/
+project/metals.sbt
+
+# IDE
+.idea/
+.bsp/
+.metals/
+.vscode/
