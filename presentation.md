@@ -578,7 +578,74 @@ cont.isDone();    // true
 
 ---
 
-## Slide 24: The Concurrency Triangle
+## Slide 24: Stack Frames — From Thread to Heap and Back
+
+```java
+void foo() { bar(); }       // ← pushes frame
+void bar() {
+    Continuation.yield(SCOPE);  // ← triggers copy
+    System.out.println("resumed!");
+}
+Continuation cont = new Continuation(SCOPE, () -> {
+    foo();       // ← pushes frame
+});
+cont.run();       // ← runs until yield (stack → heap)
+cont.run();       // ← resumes at yield (heap → stack)
+```
+
+```
+┌──── cont.run() ─── RUNNING on Carrier Thread 1 ────────────────┐
+│                                                                │
+│  Carrier Thread 1 Stack           Heap (Continuation object)   │
+│  ┌─────────────────────┐          ┌─────────────────────┐      │
+│  │ bar()  [line 2]     │          │                     │      │
+│  │ foo()               │          │     (empty)         │      │
+│  │ cont.lambda         │          │                     │      │
+│  │ Continuation.run()  │          └─────────────────────┘      │
+│  └─────────────────────┘                                       │
+└────────────────────────────────────────────────────────────────┘
+
+              │  bar() calls Continuation.yield(SCOPE)
+              ▼
+
+┌──── yield() ─── SUSPENDED ──────────────────────────────────────┐
+│                                                                 │
+│  Carrier Thread 1 Stack           Heap (Continuation object)    │
+│  ┌─────────────────────┐   copy   ┌─────────────────────┐       │
+│  │                     │ ──────►  │ bar()  [line 2]     │       │
+│  │                     │   to     │ foo()               │       │
+│  │     (free!)         │  heap    │ cont.lambda         │       │
+│  │                     │          └─────────────────────┘       │
+│  └─────────────────────┘    Stack frames are frozen on the heap │
+│                             Carrier Thread 1 is FREE            │
+└─────────────────────────────────────────────────────────────────┘
+
+              │  cont.run() called again (possibly on a DIFFERENT carrier)
+              ▼
+
+┌──── cont.run() ─── RESUMED on Carrier Thread 3 ────────────────┐
+│                                                                │
+│  Carrier Thread 3 Stack           Heap (Continuation object)   │
+│  ┌─────────────────────┐  copy    ┌─────────────────────┐      │
+│  │ bar()  [line 2]     │ ◄──────  │                     │      │
+│  │ foo()               │  from    │     (empty)         │      │
+│  │ cont.lambda         │  heap    │                     │      │
+│  │ Continuation.run()  │          └─────────────────────┘      │
+│  └─────────────────────┘                                       │
+│  bar() resumes at line 2 → prints "resumed!"                   │
+└────────────────────────────────────────────────────────────────┘
+```
+
+- On `yield()`: the JVM **copies the virtual thread's stack frames** from the carrier thread stack **to the heap** (inside the `Continuation` object)
+- On `run()`: the JVM **restores those frames** from the heap **onto a carrier thread** — possibly a **different** one
+- The carrier thread is **never blocked** — it's immediately available for other virtual threads
+- This is **O(stack depth)**, not O(full thread stack) — only the frames that belong to the continuation are copied
+
+> **Speaker notes:** Let's look at what actually happens in memory. We have a continuation that calls foo, which calls bar, which yields. When bar calls yield, the JVM copies three stack frames — bar, foo, and the lambda — from the carrier thread's stack to the heap. The carrier thread is now free to run other virtual threads. Later, when we call run() again, the JVM copies those frames BACK onto a carrier thread's stack — and it might be a completely different carrier thread! Bar resumes exactly at the line after yield and prints "resumed!". This is how virtual threads achieve lightweight context switching: instead of an OS-level save-and-restore of the entire thread, the JVM copies just the relevant frames. And the cost is proportional to the stack depth, not to a fixed thread stack size.
+
+---
+
+## Slide 25: The Concurrency Triangle
 
 ```
                     CONTINUATIONS
@@ -618,7 +685,7 @@ Three languages, three abstraction levels, **one pattern**.
 
 ---
 
-## Slide 25: References
+## Slide 26: References
 
 - [How do Fibers Work? A Peek Under the Hood](https://www.youtube.com/watch?v=x5_MmZVLiSM)
 - [Concurrency In Scala with Cats-Effect](https://github.com/slouc/concurrency-in-scala-with-ce)
@@ -634,7 +701,7 @@ Three languages, three abstraction levels, **one pattern**.
 
 ---
 
-## Slide 26: Thank You
+## Slide 27: Thank You
 
 **Riccardo Cardin**
 
@@ -650,6 +717,6 @@ Scalar 2026
 | 3-6     | The Problem       | ~3 min   |
 | 7-15    | Scala Fibers      | ~8 min   |
 | 16-20   | Kotlin Coroutines | ~4 min   |
-| 21-23   | Java VT           | ~3 min   |
-| 24      | The Triangle      | ~1 min   |
-| 25-26   | References + End  | ~0 min   |
+| 21-24   | Java VT           | ~4 min   |
+| 25      | The Triangle      | ~1 min   |
+| 26-27   | References + End  | ~0 min   |
