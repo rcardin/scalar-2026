@@ -90,7 +90,7 @@ Thread:  ───────┤                  ├───────
   - It's **lightweight**: just a function (or a small data structure), not an entire thread stack
 
 ```scala
-// Th4e continuation is implicit (it's the next line)
+// The continuation is implicit (it's the next line)
 val result = add(1, multiply(2, 3))
 println(s"The result is: $result")
 
@@ -171,7 +171,7 @@ object IO:
 ```scala
 val bathTime: IO[Unit] =
   IO.delay(println("Going to the bathroom"))
-    .flatMap(_ => IO.delay(Thread.sleep(500)))  // step 2
+    .flatMap(_ => IO.delay(Thread.sleep(500)))  // step 2 — still blocks!
     .flatMap(_ => IO.delay(println("Done!")))   // step 3
 ```
 
@@ -581,6 +581,7 @@ cont.isDone();    // true
 ## Slide 24: Stack Frames — From Thread to Heap and Back
 
 ```java
+// Inside a class
 void foo() { bar(); }       // ← pushes frame
 void bar() {
     Continuation.yield(SCOPE);  // ← triggers copy
