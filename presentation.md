@@ -646,7 +646,38 @@ cont.run();       // ← resumes at yield (heap → stack)
 
 ---
 
-## Slide 25: The Concurrency Triangle
+## Slide 25: Not All Continuations Are the Same
+
+- **Delimited** vs. **Undelimited**
+  - **Undelimited**: captures the **entire** rest of the program — rarely useful in practice
+  - **Delimited**: captures up to a **delimiter** (a boundary) — this is what we want
+
+```
+Undelimited:  [─── captured ──────────────────────────── ∞ ]
+Delimited:    [─── captured ───── | delimiter ]   rest of program continues
+```
+
+- **One-shot** vs. **Multi-shot**
+  - **One-shot**: a continuation can be resumed **exactly once** — then it's consumed
+  - **Multi-shot**: a continuation can be **duplicated** and resumed **multiple times** (fork!)
+
+- All three use **delimited** continuations — but they differ on **one-shot vs. multi-shot**
+
+| | Scala | Kotlin | Java |
+|---|---|---|---|
+| **Delimiter** | The `Async` boundary (run loop stops) | The coroutine scope | `ContinuationScope` |
+| **Resume** | `cb(Right(value))` | `resumeWith()` | `cont.run()` |
+| **Multi-shot?** | **Yes** — `IO` is data, re-interpretable | No (throws `IllegalStateException`) | No (mutable internal state) |
+
+- Scala's `IO` is an **ADT** — the `FlatMap` continuations are **plain functions**, reusable as values
+- The same `IO[A]` tree can be interpreted **multiple times**, each producing a fresh execution
+- Kotlin and Java continuations carry **mutable state** — they're consumed on resume
+
+> **Speaker notes:** Before we wrap up, let's be precise about what KIND of continuations these are. There are two axes. First: delimited vs. undelimited. An undelimited continuation captures the entire rest of the program — that's too powerful and rarely useful. All three languages use DELIMITED continuations — they capture up to a boundary. In Scala, the delimiter is the Async boundary where the run loop stops. In Kotlin, it's the coroutine scope. In Java, it's the explicit ContinuationScope passed to yield(). Second axis: one-shot vs. multi-shot. Here's where they diverge. Scala's continuations are multi-shot — because IO is just data. The FlatMap chain stores plain functions as continuations. You can interpret the same IO tree multiple times, each run creating a fresh execution. The continuation is a VALUE you can reuse. Kotlin is strictly one-shot — calling resumeWith twice throws IllegalStateException. Java is also one-shot — the Continuation object has mutable internal state that tracks progress. This is a real practical difference: Scala's approach enables retry, memoization, and re-execution for free — you just run the same IO value again.
+
+---
+
+## Slide 26: The Concurrency Triangle
 
 ```
                     CONTINUATIONS
@@ -686,7 +717,7 @@ Three languages, three abstraction levels, **one pattern**.
 
 ---
 
-## Slide 26: References
+## Slide 27: References
 
 - [How do Fibers Work? A Peek Under the Hood](https://www.youtube.com/watch?v=x5_MmZVLiSM)
 - [Concurrency In Scala with Cats-Effect](https://github.com/slouc/concurrency-in-scala-with-ce)
@@ -702,7 +733,7 @@ Three languages, three abstraction levels, **one pattern**.
 
 ---
 
-## Slide 27: Thank You
+## Slide 28: Thank You
 
 **Riccardo Cardin**
 
@@ -718,6 +749,6 @@ Scalar 2026
 | 3-6     | The Problem       | ~3 min   |
 | 7-15    | Scala Fibers      | ~8 min   |
 | 16-20   | Kotlin Coroutines | ~4 min   |
-| 21-24   | Java VT           | ~4 min   |
-| 25      | The Triangle      | ~1 min   |
-| 26-27   | References + End  | ~0 min   |
+| 21-24   | Java VT           | ~3 min   |
+| 25-26   | Comparison + Triangle | ~2 min |
+| 27-28   | References + End  | ~0 min   |
