@@ -581,11 +581,10 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 | Yield/Suspend  | `Async` case — callback-based suspension    |
 
 - **Suspension points:** every `Async` boundary — the programmer **explicitly** chooses
-- **Cats Effect**, **ZIO** implement this with battle-tested optimizations
-- **Ox**, **YAES** explore alternative approaches
+- **Cats Effect**, **ZIO**, and **Kyo** implement this with battle-tested optimizations
 
 <!--
-The continuation is the Async callback that resumes a fiber's FlatMap chain. The programmer decides where suspension happens — every Async boundary. You see it, you control it. Cats Effect and ZIO do this under the hood. Ox and YAES take different paths. The Scala ecosystem gives you choices.
+The continuation is the Async callback that resumes a fiber's FlatMap chain. The programmer decides where suspension happens — every Async boundary. You see it, you control it. Cats Effect, ZIO, and Kyo do this under the hood. Ox and YAES take different paths. The Scala ecosystem gives you choices.
 -->
 
 ---
