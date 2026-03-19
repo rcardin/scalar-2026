@@ -2,7 +2,7 @@
 marp: true
 theme: default
 paginate: true
-footer: "Made by Riccardo Cardin with ❤️ for Scalar 2026"
+footer: "Made by **Riccardo Cardin** with ❤️ for Scalar 2026&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
 style: |
   /* --- Catppuccin Macchiato Palette --- */
   :root {
@@ -54,6 +54,18 @@ style: |
   /* --- Strong / Bold --- */
   section strong {
     color: var(--ctp-peach);
+  }
+
+  /* --- Footer --- */
+  header, footer {
+    text-align: right;
+    width: 100%;
+    left: 0;
+    right: 0;
+    font-size: 16px;
+  }
+  footer strong {
+    color: var(--ctp-subtext0);
   }
 
   /* --- Links --- */
@@ -245,12 +257,15 @@ style: |
 ---
 
 <!-- _class: lead -->
+<!-- _footer: "" -->
 <!-- _paginate: false -->
 ![bg opacity:0.3](assets/cats-with-thread.png)
 
 <style scoped>
 section { background-position: center top; }
 </style>
+
+<img src="assets/scalar-2026.svg" width="30%">
 
 # The Concurrency Triangle
 
@@ -340,7 +355,6 @@ When a thread calls a database, it just sits there. The OS saves all the registe
 // The continuation is implicit (it's the next line)
 val result = add(1, multiply(2, 3))
 println(s"The result is: $result")
-
 // Continuation-Passing Style — the continuation is explicit
 multiplyCPS(2, 3) { multiplyResult =>
   addCPS(1, multiplyResult) { addResult =>
@@ -351,7 +365,6 @@ multiplyCPS(2, 3) { multiplyResult =>
 
 - **Suspend** a task: save its continuation, **free the thread**
 - **Resume** it later: pick up the continuation — on **any** thread
-- No OS context switch
 
 <!--
 The OS does a heavyweight operation because it doesn't know what our program needs. But WE know. When a task waits for I/O, we know exactly what should happen next — it's the next line, the callback, the "continuation." Save that tiny piece of information, free the thread. That's the idea behind fibers, coroutines, and virtual threads.
@@ -389,7 +402,7 @@ section { background-position: center top; }
 
 # Scala Fibers
 
-## Continuations at the User Level
+## Continuations at the **User Level**
 
 ---
 
@@ -483,11 +496,8 @@ Instead of recursive calls that eat thread stack, we use a while loop and an exp
 
 ```scala
 enum IO[+A]:
-  // ... Pure, Delay, FlatMap ...
   case Async(register: (Either[Throwable, A] => Unit) => Unit)
-```
 
-```scala
 def sleep(millis: Long): IO[Unit] =
   IO.Async { cb =>    // cb is the continuation!
     scheduler.schedule(() => cb(Right(())), millis, MILLISECONDS)
@@ -505,6 +515,10 @@ HERE is where the continuation pattern solves concurrency. Async is an FFI to th
 -->
 
 ---
+<!-- _class: small -->
+<style scoped>
+  section code { font-size: 20px; }
+</style>
 
 # Fibers — Putting It All Together
 
@@ -514,23 +528,17 @@ class IOFiber[A](io: IO[A], scheduler: Scheduler):
   private val continuations = Stack[Any => IO[Any]]()
 
   def run(): Unit = currentIO match
-    case Pure(value) =>
-      if continuations.nonEmpty then
-        currentIO = continuations.pop()(value)
-        scheduler.submit(this)         // Continue on the pool
-    case Delay(thunk) =>
-      currentIO = Pure(thunk())
+    case Pure(value) => if continuations.nonEmpty then
+      currentIO = continuations.pop()(value)
       scheduler.submit(this)
     case FlatMap(inner, cont) =>
       continuations.push(cont)
       currentIO = inner
       scheduler.submit(this)
-    case Async(register) =>
-      register { case Right(value) =>  // Suspend! Free the thread
-        currentIO = Pure(value)
-        scheduler.submit(this)         // Resume when callback fires
-        // ...
-      }
+    case Async(register) => register { case Right(value) =>
+      currentIO = Pure(value)
+      scheduler.submit(this)
+    }
 ```
 
 - After each step: **re-submit** to scheduler — **cooperative scheduling**
@@ -569,23 +577,20 @@ The scheduler is surprisingly simple. A queue of fibers and a thread pool. When 
 # Putting It All Together — Morning Routine
 
 ```scala
-val bathTime: IO[Unit] =
-  IO.delay(println("Going to the bathroom"))
+val bathTime: IO[Unit] = IO.delay(println("Going to the bathroom"))
     .flatMap(_ => sleep(500))
     .flatMap(_ => IO.delay(println("Done with the bath")))
 
-val boilingWater: IO[Unit] =
-  IO.delay(println("Boiling some water"))
+val boilingWater: IO[Unit] = IO.delay(println("Boiling some water"))
     .flatMap(_ => sleep(1000))
     .flatMap(_ => IO.delay(println("Water is ready")))
 
-val morningRoutine: IO[Unit] =
-  for
+val morningRoutine: IO[Unit] = for {
     fiberA <- bathTime.start
     fiberB <- boilingWater.start
     _      <- fiberA.join
     _      <- fiberB.join
-  yield ()
+  }  yield ()
 ```
 
 - `start` creates a new `IOFiber` and submits it to the scheduler
@@ -599,6 +604,10 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 
 # Scala's Continuation Machinery
 
+- **Suspension points:** every `Async` boundary — the programmer **explicitly** chooses
+- **Cats Effect**, **ZIO**, and **Kyo** implement this with battle-tested optimizations
+<br/>
+
 | Ingredient     | Scala (User Level)                          |
 |----------------|---------------------------------------------|
 | Continuation   | `Async` callback + `FlatMap` chain          |
@@ -606,8 +615,6 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 | Scheduler      | Custom run loop + fiber queue               |
 | Yield/Suspend  | `Async` case — callback-based suspension    |
 
-- **Suspension points:** every `Async` boundary — the programmer **explicitly** chooses
-- **Cats Effect**, **ZIO**, and **Kyo** implement this with battle-tested optimizations
 
 <!--
 The continuation is the Async callback that resumes a fiber's FlatMap chain. The programmer decides where suspension happens — every Async boundary. You see it, you control it. Cats Effect, ZIO, and Kyo do this under the hood. Ox and YAES take different paths. The Scala ecosystem gives you choices.
@@ -627,7 +634,7 @@ section { background-position: center top; }
 
 # Kotlin Coroutines
 
-## Continuations at Compile Time
+## Continuations at **Compile Time**
 
 ---
 
@@ -761,7 +768,7 @@ section { background-position: center top; }
 
 # Java Virtual Threads
 
-## Continuations at Runtime
+## Continuations at **Runtime**
 
 ---
 
