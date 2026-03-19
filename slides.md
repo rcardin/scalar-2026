@@ -2,6 +2,7 @@
 marp: true
 theme: default
 paginate: true
+footer: "Made by Riccardo Cardin with ❤️ for Scalar 2026"
 style: |
   /* --- Catppuccin Macchiato Palette --- */
   :root {
@@ -34,7 +35,7 @@ style: |
     background-color: var(--ctp-base);
     color: var(--ctp-text);
     font-family: 'Inter', 'SF Pro Display', 'Segoe UI', sans-serif;
-    font-size: 28px;
+    font-size: 25px;
   }
 
   /* --- Headings --- */
@@ -177,10 +178,23 @@ style: |
     color: var(--ctp-subtext1);
   }
 
+  /* --- Footer --- */
+  section::before {
+    color: var(--ctp-overlay0);
+    font-size: 14px;
+    position: absolute;
+    left: 30px;
+    bottom: 20px;
+  }
+
   /* --- Pagination --- */
   section::after {
+    content: attr(data-marpit-pagination) ' / ' attr(data-marpit-pagination-total);
     color: var(--ctp-overlay0);
     font-size: 16px;
+    position: absolute;
+    right: 30px;
+    bottom: 20px;
   }
 
   /* --- Lead slides (title, thank you) --- */
@@ -232,13 +246,18 @@ style: |
 
 <!-- _class: lead -->
 <!-- _paginate: false -->
+![bg opacity:0.3](assets/cats-with-thread.png)
+
+<style scoped>
+section { background-position: center top; }
+</style>
 
 # The Concurrency Triangle
 
-## Scala Fibers, Java Virtual Threads, and Kotlin Coroutines
+## Scala Fibers, Kotlin Coroutines, and Java Virtual Threads
 
-**Riccardo Cardin**
-Scalar 2026
+### Riccardo Cardin
+**Scalar 2026**
 
 <!--
 Welcome everyone. Today we're going to look at how three JVM languages solve the same fundamental problem — and spoiler: they all end up at the same place, just at different abstraction levels.
@@ -357,13 +376,20 @@ Every solution we'll see today needs these four ingredients. The difference is W
 
 ---
 
-<!-- _class: divider -->
+![bg opacity:0.3](assets/cats-with-thread.png)
 
-## 01
+<style scoped>
+section { background-position: center top; }
+</style>
+
+<!-- _class: divider -->
+<!-- _footer: "" -->
+<!-- _paginate: false -->
+
 
 # Scala Fibers
 
-Continuations at the User Level
+## Continuations at the User Level
 
 ---
 
@@ -589,13 +615,19 @@ The continuation is the Async callback that resumes a fiber's FlatMap chain. The
 
 ---
 
-<!-- _class: divider -->
+![bg opacity:0.3](assets/cats-with-thread.png)
 
-## 02
+<style scoped>
+section { background-position: center top; }
+</style>
+
+<!-- _class: divider -->
+<!-- _footer: "" -->
+<!-- _paginate: false -->
 
 # Kotlin Coroutines
 
-Continuations at Compile Time
+## Continuations at Compile Time
 
 ---
 
@@ -715,13 +747,21 @@ Same four ingredients. The Continuation is compiler-generated with resumeWith �
 
 ---
 
-<!-- _class: divider -->
+![bg opacity:0.3](assets/cats-with-thread.png)
 
-## 03
+<style scoped>
+section { background-position: center top; }
+</style>
+
+<!-- _class: divider -->
+<!-- _footer: "" -->
+<!-- _paginate: false -->
+
+
 
 # Java Virtual Threads
 
-Continuations at Runtime
+## Continuations at Runtime
 
 ---
 
@@ -906,6 +946,12 @@ Same four ingredients, three abstraction levels. In Scala, YOU decide where susp
 - [Continuations: The magic behind virtual threads](https://www.youtube.com/watch?v=HQsYsUac51g)
 
 ---
+
+![bg opacity:0.3](assets/cats-with-thread.png)
+
+<style scoped>
+section { background-position: center top; }
+</style>
 
 <!-- _class: lead -->
 <!-- _paginate: false -->
