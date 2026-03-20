@@ -604,8 +604,9 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 # Scala's Continuation Machinery
 
 - **Suspension points:** every `Async` boundary — the programmer **explicitly** chooses
-- **Cats Effect**, **ZIO**, and **Kyo** implement this with battle-tested optimizations
-<br/>
+- **Cats Effect**, **ZIO**, and **Kyo** add battle-tested optimizations:
+  - **Auto-cede** — run ~1024 steps before yielding, not one-at-a-time
+  - **Work-stealing pool** — idle threads steal tasks from busy ones
 
 | Ingredient     | Scala (User Level)                          |
 |----------------|---------------------------------------------|
@@ -615,7 +616,7 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 | Yield/Suspend  | `Async` case — callback-based suspension    |
 
 <!--
-The continuation is the Async callback that resumes a fiber's FlatMap chain. The programmer decides where suspension happens — every Async boundary. You see it, you control it. Cats Effect, ZIO, and Kyo do this under the hood. Ox and YAES take different paths. The Scala ecosystem gives you choices.
+The continuation is the Async callback that resumes a fiber's FlatMap chain. The programmer decides where suspension happens — every Async boundary. You see it, you control it. Our toy runtime re-submits to the scheduler after every single step. Real libraries like Cats Effect, ZIO, and Kyo batch many synchronous steps in a tight loop — typically around 1024 — before yielding, which dramatically reduces scheduling overhead. They also use work-stealing thread pools instead of a simple fixed pool, support fiber cancellation with finalizer cleanup, and provide a structured error channel throughout the entire IO type. These are the optimizations that make these libraries production-ready.
 -->
 
 ---
