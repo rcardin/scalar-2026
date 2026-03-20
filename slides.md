@@ -332,12 +332,12 @@ Concurrency is about the PROBLEM — tasks that can run in any order. Parallelis
 - The OS has **no idea** what our program wants to do next
 
 ```
-Task A: [ work ][ wait for I/O... ][ work ]
-Thread:  ───────┤                  ├───────
-                ↓ OS context switch ↓
-                 (save entire stack, (restore entire stack,
-                  load another one)   resume from where
-                                      we left off)
+Task A: [ work ][ wait for I/O...   ][ work ]
+Thread:  ───────┤                    ├───────
+                ↓ OS context switch  ↓
+                 (save entire stack,   (restore entire stack,
+                  load another one)     resume from where
+                                        we left off)
 ```
 
 <!--
@@ -406,7 +406,7 @@ section { background-position: center top; }
 
 ---
 
-# IO — Describing a Program as Data
+# `IO` — Describing a Program as Data
 
 - The `IO` monad is an **ADT** — a tree of instructions
 
@@ -434,7 +434,7 @@ In the effect system approach, we don't run code immediately. We build a data st
 
 ---
 
-# FlatMap Chains — Sequential, Not Yet Concurrent
+# `FlatMap` Chains — Sequential, Not Yet Concurrent
 
 ```scala
 val bathTime: IO[Unit] =
@@ -490,9 +490,9 @@ Instead of recursive calls that eat thread stack, we use a while loop and an exp
 
 ---
 
-# Async — The Real Continuation
+# `Async` — The Real Continuation
 
-- `Async` bridges **callback-based APIs** into the IO world
+- `Async` bridges **callback-based APIs** into the `IO` world
 
 ```scala
 enum IO[+A]:
@@ -504,14 +504,12 @@ def sleep(millis: Long): IO[Unit] =
   }
 ```
 
-- When the run loop hits `Async`:
-  1. **Stops** the trampoline — continuation stack stays on the heap
-  2. **Frees the thread**
-  3. When `cb` fires, the fiber is **rescheduled**
-- `FlatMap` builds the chain; `Async` is where we **cut it** and **resume later**
+- The callback `cb` **is** the continuation — it resumes the computation when the external API completes
+- But `unsafeRun` **can't handle this**: its `while` loop monopolizes the thread
+- We need to **break the loop into single steps**, wrap the state in an object, and **yield the thread**
 
 <!--
-HERE is where the continuation pattern solves concurrency. Async is an FFI to the callback world. The callback cb IS the continuation. When the run loop hits Async, it hands cb to the external API and STOPS. The thread walks away. When the operation completes, cb re-submits the fiber with its full continuation stack. The fiber resumes exactly where it left off.
+Async is an FFI to the callback world. The callback cb IS the continuation. But our current unsafeRun is a while-true loop — it blocks one thread until the whole IO completes. It has no way to pause, free the thread, and resume later when cb fires. We need to refactor the run loop: break it into single steps, wrap the continuation stack in an object, and re-submit each step to a scheduler. That object is a Fiber.
 -->
 
 ---
@@ -615,7 +613,6 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 | Scheduler      | Custom run loop + fiber queue               |
 | Yield/Suspend  | `Async` case — callback-based suspension    |
 
-
 <!--
 The continuation is the Async callback that resumes a fiber's FlatMap chain. The programmer decides where suspension happens — every Async boundary. You see it, you control it. Cats Effect, ZIO, and Kyo do this under the hood. Ox and YAES take different paths. The Scala ecosystem gives you choices.
 -->
@@ -658,8 +655,7 @@ suspend fun bathTime() {
 fun bathTime(callerContinuation: Continuation<*>): Any {
   val sm = callerContinuation as? BathTimeSM
     ?: BathTimeSM(callerContinuation)
-  if (sm.label == 0) { /* ... */ }
-  if (sm.label == 1) { /* ... */ }
+  // ...
 }
 ```
 
@@ -674,7 +670,7 @@ Kotlin takes a completely different approach. Mark a function as suspend, and th
 ```kotlin
 fun bathTime(callerContinuation: Continuation<*>): Any {
   val sm = callerContinuation as? BathTimeSM
-    ?: BathTimeSM(callerContinuation)      // ① Create state machine
+    ?: BathTimeSM(callerContinuation)       // ① Create state machine
   if (sm.label == 0) {                      // ② First segment
     logger.info("Going to the bathroom")
     sm.label = 1                            // ③ Set resume point
@@ -697,7 +693,7 @@ First call: label is 0, we log, set label to 1, call delay. delay returns COROUT
 
 ---
 
-# resumeWith — The Continuation in Action
+# `resumeWith` — The Continuation in Action
 
 - `suspendCoroutine` suspends and provides the `Continuation` — Kotlin's `Async`
 
@@ -730,13 +726,6 @@ suspendCoroutine gives you the continuation object. You hand it to a Timer. When
 
 # Kotlin — Same Ingredients, Compiler-Generated
 
-| Ingredient     | Kotlin (Compile Time)                       |
-|----------------|---------------------------------------------|
-| Continuation   | `Continuation<T>` interface + `resumeWith`  |
-| Thread Pool    | Dispatcher (Default, IO, ...)               |
-| Scheduler      | Dispatcher picks where to run               |
-| Yield/Suspend  | `COROUTINE_SUSPENDED` return value          |
-
 ```kotlin
 public interface Continuation<in T> {
   public val context: CoroutineContext
@@ -746,7 +735,13 @@ public interface Continuation<in T> {
 
 - `resumeWith` resumes the caller — **this is CPS**
 - **Suspension points:** every call to a `suspend` function — **compiler enforces** them
-- **Coloring problem:** `suspend` is contagious
+
+| Ingredient     | Kotlin (Compile Time)                       |
+|----------------|---------------------------------------------|
+| Continuation   | `Continuation<T>` interface + `resumeWith`  |
+| Thread Pool    | Dispatcher (Default, IO, ...)               |
+| Scheduler      | Dispatcher picks where to run               |
+| Yield/Suspend  | `COROUTINE_SUSPENDED` return value          |
 
 <!--
 Same four ingredients. The Continuation is compiler-generated with resumeWith — that's CPS. The Dispatcher is the scheduler. The suspension points are every call to a suspend function. The compiler enforces this through function coloring — you MUST mark suspendable functions with suspend.
@@ -777,15 +772,12 @@ section { background-position: center top; }
 - Reuse the `Thread` API with a different implementation
 
 ```java
-// What you write — same old Java!
 Thread vt = Thread.ofVirtual().start(() -> {
     System.out.println("Going to the bathroom");
     Thread.sleep(Duration.ofMillis(500));
     System.out.println("Done with the bath");
 });
-```
 
-```java
 // Inside VirtualThread (JDK source code)
 VirtualThread(..., Runnable task) {
     this.scheduler = scheduler;
@@ -794,10 +786,11 @@ VirtualThread(..., Runnable task) {
 ```
 
 - **No coloring**, no special syntax, no monadic wrapping
-- `Thread.sleep`, `Socket.read` — all **yield automatically**
+- Virtual threads are **mounted** on platform threads (**carrier threads**)
+- `Thread.sleep`, `Socket.read` — **unmount** automatically
 
 <!--
-Java: no new syntax, no new types. Just Thread.ofVirtual(). Under the hood, VirtualThread wraps a Continuation object. When the virtual thread calls sleep or does I/O, the JVM calls Continuation.yield(), copies the stack to the heap, and frees the carrier thread. Completely invisible to the developer.
+Java: no new syntax, no new types. Just Thread.ofVirtual(). Under the hood, VirtualThread wraps a Continuation object. A carrier thread is a platform thread that actually executes the virtual thread's code. Mount means the virtual thread's stack frames are loaded onto the carrier. When the virtual thread calls sleep or does I/O, the JVM unmounts it — calls Continuation.yield(), copies the stack to the heap, and frees the carrier thread. Completely invisible to the developer.
 -->
 
 ---
@@ -806,9 +799,9 @@ Java: no new syntax, no new types. Just Thread.ofVirtual(). Under the hood, Virt
 
 ```java
 Continuation cont = new Continuation(SCOPE, () -> {
-    System.out.println("before");
+    IO.println("before");
     Continuation.yield(SCOPE);
-    System.out.println("after");
+    IO.println("after");
 });
 cont.run();       // prints "before"
 cont.isDone();    // false
@@ -817,6 +810,62 @@ cont.isDone();    // true
 ```
 
 - `yield()` **copies stack frames to the heap** — `run()` restores them
+- The developer **never calls** `yield()` directly — every blocking JDK call does it
+
+<!--
+yield() copies stack frames to the heap, run() restores them. The developer never calls yield() directly. Every blocking call in the JDK internally contains a Continuation.yield(). No coloring, no Async, no suspend keyword. The JVM handles it for you.
+-->
+
+---
+
+# Stack Frames — From Thread to Heap and Back
+
+```java
+Continuation cont = new Continuation(SCOPE, () -> { // cont.lambda
+    foo();                                           // foo()
+});
+void foo() { bar(); }
+void bar() { Continuation.yield(SCOPE); }            // bar() [ln 2]
+```
+
+```
+  MOUNTED (Carrier 1)             yield()              UNMOUNTED
+  Thread Stack    Heap            ──────►        Thread Stack    Heap
+ ┌─────────────┐ ┌───────┐                     ┌─────────────┐ ┌─────────────┐
+ │ bar() [ln 2]│ │(empty)│                     │  (free!)    │ │ bar() [ln 2]│
+ │ foo()       │ └───────┘                     └─────────────┘ │ foo()       │
+ │ cont.lambda │                  Carrier FREE!                │ cont.lambda │
+ └─────────────┘                                               └─────────────┘
+```
+
+<!--
+On yield, the JVM copies stack frames from the carrier thread to the heap — the continuation is unmounted. The carrier is free to pick up other work. Only the continuation's frames are copied, not the full thread stack.
+-->
+
+---
+
+# Stack Frames — And Back
+
+```
+  UNMOUNTED                        run()               RE-MOUNTED (Carrier 3!)
+  Thread Stack    Heap            ──────►        Thread Stack    Heap
+ ┌─────────────┐ ┌─────────────┐                ┌─────────────┐ ┌───────┐
+ │  (free!)    │ │ bar() [ln 2]│                │ bar() [ln 2]│ │(empty)│
+ └─────────────┘ │ foo()       │                │ foo()       │ └───────┘
+                 │ cont.lambda │                │ cont.lambda │
+                 └─────────────┘                └─────────────┘
+```
+
+- **Re-mounted** on whichever carrier is available — not necessarily the same one
+- Only the continuation's frames are copied, not the full thread stack
+
+<!--
+On run(), the heap frames are restored onto any available carrier thread — not necessarily the same one. bar() resumes exactly where it left off. The cost is O(stack depth), not O(full thread stack). Lightweight context switching without OS involvement.
+-->
+
+---
+
+# Java — Same Ingredients, Runtime Level
 
 | Ingredient     | Java (Runtime)                              |
 |----------------|---------------------------------------------|
@@ -828,47 +877,7 @@ cont.isDone();    // true
 - **Suspension points:** every blocking JDK call — **completely transparent**
 
 <!--
-yield() copies stack frames to the heap, run() restores them. The developer never calls yield() directly. Every blocking call in the JDK internally contains a Continuation.yield(). No coloring, no Async, no suspend keyword. The JVM handles it for you.
--->
-
----
-
-# Stack Frames — From Thread to Heap and Back
-
-```
-┌──── cont.run() ─── RUNNING on Carrier Thread 1 ──────────────┐
-│  Carrier Thread 1 Stack       Heap (Continuation object)      │
-│  ┌───────────────────┐        ┌───────────────────┐           │
-│  │ bar()  [line 2]   │        │     (empty)       │           │
-│  │ foo()             │        └───────────────────┘           │
-│  │ cont.lambda       │                                        │
-│  └───────────────────┘                                        │
-└───────────────────────────────────────────────────────────────┘
-          │  Continuation.yield(SCOPE)  →  stack copied to heap
-          ▼
-┌──── SUSPENDED ────────────────────────────────────────────────┐
-│  Carrier Thread 1 Stack       Heap (Continuation object)      │
-│  ┌───────────────────┐  copy  ┌───────────────────┐           │
-│  │     (free!)       │ ────►  │ bar()  [line 2]   │           │
-│  └───────────────────┘        │ foo()             │           │
-│                               │ cont.lambda       │           │
-│  Thread 1 is FREE             └───────────────────┘           │
-└───────────────────────────────────────────────────────────────┘
-          │  cont.run() again  →  heap copied to (any) carrier
-          ▼
-┌──── RESUMED on Carrier Thread 3 ──────────────────────────────┐
-│  Carrier Thread 3 Stack       Heap (Continuation object)      │
-│  ┌───────────────────┐  from  ┌───────────────────┐           │
-│  │ bar()  [line 2]   │ ◄──── │     (empty)       │           │
-│  │ foo()             │  heap  └───────────────────┘           │
-│  │ cont.lambda       │                                        │
-│  └───────────────────┘                                        │
-│  bar() resumes → prints "resumed!"                            │
-└───────────────────────────────────────────────────────────────┘
-```
-
-<!--
-On yield, the JVM copies stack frames from the carrier thread to the heap. The carrier is free. On run(), frames are restored onto any carrier thread. The cost is O(stack depth), not O(full thread stack). Lightweight context switching without OS involvement.
+Same four ingredients at the runtime level. The Continuation is a JDK-internal class. The thread pool is ForkJoinPool with carrier threads. The scheduler is built into the JVM runtime. And suspension is completely transparent — every blocking JDK call internally yields the continuation. No coloring, no Async, no suspend keyword.
 -->
 
 ---
