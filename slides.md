@@ -882,26 +882,57 @@ Same four ingredients at the runtime level. The Continuation is a JDK-internal c
 
 ---
 
-# Not All Continuations Are the Same
-
-- **Delimited** vs. **Undelimited**
-  - **Undelimited**: captures the **entire** rest of the program
-  - **Delimited**: captures up to a **delimiter** (a boundary)
+# The Concurrency Triangle
 
 ```
-Undelimited:  [─── captured ──────────────────────────── ∞ ]
-Delimited:    [─── captured ───── | delimiter ]   rest of program continues
+                    CONTINUATIONS  
+                        /  \
+                       /    \
+        User Level    / SAME \   Runtime Level
+        (Library)    / CORE   \  (JVM)
+                    / PATTERN  \
+                   /            \
+      Scala Fibers ──────────── Java Virtual Threads
+                   \            /
+                    \          /
+                  Kotlin Coroutines
+                    Compile Level
 ```
 
-- **One-shot** vs. **Multi-shot**
-  - **One-shot**: resumed **exactly once** — then consumed
-  - **Multi-shot**: can be **duplicated** and resumed **multiple times**
+- Three languages, three abstraction levels, **one pattern**.
 
-- All three are **delimited** — but they differ on **one-shot vs. multi-shot**
+<!--
+Same four ingredients, three abstraction levels. Three expressions of the same breakthrough, with different trade-offs in control versus convenience.
+-->
+
+---
+
+# Three Levels of Suspension
 
 | | Scala | Kotlin | Java |
 |---|---|---|---|
-| **Delimiter** | `Async` boundary | Coroutine scope | `ContinuationScope` |
+| **Suspension** | `Async` boundaries | `suspend` calls | Blocking JDK calls |
+| **Visibility** | Explicit | Compiler-enforced | Transparent |
+
+- Scala: **you** decide where suspension happens
+- Kotlin: the **compiler** decides — function coloring
+- Java: the **JVM** decides — completely invisible
+
+<!--
+In Scala, YOU decide where suspension happens — every Async boundary. In Kotlin, the COMPILER decides — every suspend function call. In Java, the JVM decides — every blocking call, completely transparent. From explicit to invisible.
+-->
+
+---
+
+# One-Shot vs. Multi-Shot
+
+Not all the continuations we create are the same:
+
+- **One-shot**: resumed **exactly once** — then consumed
+- **Multi-shot**: can be **duplicated** and resumed **multiple times**
+
+| | Scala | Kotlin | Java |
+|---|---|---|---|
 | **Resume** | `cb(Right(value))` | `resumeWith()` | `cont.run()` |
 | **Multi-shot?** | **Yes** — `IO` is data | No (throws!) | No (mutable state) |
 
@@ -909,42 +940,7 @@ Delimited:    [─── captured ───── | delimiter ]   rest of progra
 - Kotlin & Java: continuations carry **mutable state** — consumed on resume
 
 <!--
-Two axes. Delimited vs undelimited: all three use DELIMITED continuations — they capture up to a boundary. In Scala, the Async boundary. In Kotlin, the coroutine scope. In Java, the ContinuationScope. One-shot vs multi-shot: here they diverge. Scala's continuations are multi-shot — IO is just data. The FlatMap chain stores plain functions. You can interpret the same IO tree multiple times, each producing a fresh execution. Kotlin is strictly one-shot — resumeWith twice throws IllegalStateException. Java is also one-shot — mutable internal state. This is a real practical difference: Scala's approach enables retry and re-execution for free.
--->
-
----
-
-# The Concurrency Triangle
-
-```
-                    CONTINUATIONS
-                         ▲
-                        / \
-                       /   \
-        User Level    / SAME \   Runtime Level
-        (Library)    / CORE   \  (JVM)
-                    / PATTERN  \
-                   /            \
-      Scala Fibers ──────────── Java Virtual Threads
-      IO ADT +                   VirtualThread +
-      FlatMap as cont.           Continuation.yield()
-                   \            /
-                    \          /
-                  Kotlin Coroutines
-                  Compiler-generated
-                  state machine + CPS
-                    Compile Level
-```
-
-Three languages, three abstraction levels, **one pattern**.
-
-| | Scala | Kotlin | Java |
-|---|---|---|---|
-| **Suspension** | `Async` boundaries | `suspend` calls | Blocking JDK calls |
-| **Visibility** | Explicit | Compiler-enforced | Transparent |
-
-<!--
-Same four ingredients, three abstraction levels. In Scala, YOU decide where suspension happens — every Async boundary. In Kotlin, the COMPILER decides — every suspend function call. In Java, the JVM decides — every blocking call, completely transparent. From explicit to invisible. Three expressions of the same breakthrough, with different trade-offs in control versus convenience.
+One more difference worth noting. Scala's continuations are multi-shot — IO is just data. The FlatMap chain stores plain functions. You can interpret the same IO tree multiple times, each producing a fresh execution. Kotlin is strictly one-shot — resumeWith twice throws IllegalStateException. Java is also one-shot — mutable internal state. This is a real practical difference: Scala's approach enables retry and re-execution for free.
 -->
 
 ---
