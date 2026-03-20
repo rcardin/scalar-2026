@@ -408,6 +408,7 @@ section { background-position: center top; }
 
 # `IO` — Describing a Program as Data
 
+- Scala's approach: **describe** the computation, **don't execute** it immediately
 - The `IO` monad is an **ADT** — a tree of instructions
 
 ```scala
@@ -429,7 +430,7 @@ object IO:
 ```
 
 <!--
-In the effect system approach, we don't run code immediately. We build a data structure that DESCRIBES the computation. FlatMap stores an IO and a function A => IO[B] — "what to do next with the result." Each flatMap call adds a link to the chain. But this is just a description — it doesn't solve concurrency yet.
+Why describe instead of execute? Because a data structure is something we OWN. We can inspect it, optimize it, and most importantly — decide WHEN and WHERE to run each step. In the effect system approach, we build a tree that DESCRIBES the computation. FlatMap stores an IO and a function A => IO[B] — "what to do next with the result." Each flatMap call adds a link to the chain. But this is just a description — it doesn't solve concurrency yet.
 -->
 
 ---
@@ -439,7 +440,7 @@ In the effect system approach, we don't run code immediately. We build a data st
 ```scala
 val bathTime: IO[Unit] =
   IO.delay(println("Going to the bathroom"))
-    .flatMap(_ => IO.delay(Thread.sleep(500)))  // still blocks!
+    .flatMap(_ => IO.delay(Thread.sleep(500)))  // ⚠️ BLOCKS the thread!
     .flatMap(_ => IO.delay(println("Done!")))
 ```
 
@@ -464,28 +465,28 @@ Each flatMap stores a function — what to do next. That IS a continuation. But 
 
 # The Run Loop — A Trampoline on the Heap
 
+- Key insight: move the **call stack** from the **thread** to the **heap**
+
 ```scala
 def unsafeRun[A](io: IO[A]): A =
-  val stack = scala.collection.mutable.Stack[Any => IO[Any]]()
+  val stack = Stack[Any => IO[Any]]()   // ← continuation stack on the HEAP
   var current: IO[Any] = io
   while true do
     current match
       case Pure(value) =>
         if stack.isEmpty then return value.asInstanceOf[A]
-        else current = stack.pop()(value)
-      case Delay(thunk) =>
-        current = Pure(thunk())
+        else current = stack.pop()(value)   // pop next continuation
+      case Delay(thunk) => current = Pure(thunk())
       case FlatMap(inner, cont) =>
-        stack.push(cont.asInstanceOf[Any => IO[Any]])
+        stack.push(cont)                    // push continuation
         current = inner
   throw new RuntimeException("Unreachable")
 ```
 
-- The **stack of continuations** lives on the **heap**, not the thread stack
-- We can **pause** it, **save** it, and **resume** it later
+- Execution state is now a **regular object** — we can **pause**, **save**, and **resume** it
 
 <!--
-Instead of recursive calls that eat thread stack, we use a while loop and an explicit stack of continuations on the heap. Our execution state is now a regular object on the heap — we OWN it. We can pause this loop, save the stack, free the thread, and resume later. We just need a way to trigger suspension.
+Instead of recursive calls that eat thread stack, we use a while loop and an explicit stack of continuations on the heap. This is the critical move: our execution state is now an object we OWN. We can pause this loop, save the stack, free the thread, and resume later on any thread. We just need a way to trigger suspension.
 -->
 
 ---
