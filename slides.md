@@ -404,6 +404,8 @@ section { background-position: center top; }
 
 ## Continuations at the **User Level**
 
+- Continuation lives in **library/runtime objects** (`FlatMap` chain + `Async` callback)
+
 ---
 
 # `IO` — Describing a Program as Data
@@ -635,6 +637,8 @@ section { background-position: center top; }
 
 ## Continuations at **Compile Time**
 
+- Continuation lives in a **compiler-generated state machine** (`Continuation<T>`)
+
 ---
 
 # The Compiler Rewrites Your Code
@@ -766,6 +770,8 @@ section { background-position: center top; }
 # Java Virtual Threads
 
 ## Continuations at **Runtime**
+
+- Continuation lives in the **JVM runtime** (mounted/unmounted by the VM)
 
 ---
 
@@ -909,11 +915,13 @@ Same four ingredients, three abstraction levels. Three expressions of the same b
 
 ---
 
-# Three Levels of Suspension
+# Three Levels of Suspension, Same Flow
 
 | | Scala | Kotlin | Java |
 |---|---|---|---|
+| **Define continuation** | `FlatMap` + `Async` callback | compiler-generated `Continuation` state machine | JVM `Continuation` in virtual thread |
 | **Suspension** | `Async` boundaries | `suspend` calls | Blocking JDK calls |
+| **Resume** | callback re-submits fiber | `resumeWith()` at saved label | continuation remounts |
 | **Visibility** | Explicit | Compiler-enforced | Transparent |
 
 - Scala: **you** decide where suspension happens
@@ -921,7 +929,7 @@ Same four ingredients, three abstraction levels. Three expressions of the same b
 - Java: the **JVM** decides — completely invisible
 
 <!--
-In Scala, YOU decide where suspension happens — every Async boundary. In Kotlin, the COMPILER decides — every suspend function call. In Java, the JVM decides — every blocking call, completely transparent. From explicit to invisible.
+Same suspend/resume lifecycle, three owners. Scala keeps continuation machinery in library data structures and callbacks. Kotlin moves it into compiler-generated state machines. Java pushes it into the JVM runtime, making suspension transparent at call sites.
 -->
 
 ---
@@ -936,13 +944,13 @@ Not all the continuations we create are the same:
 | | Scala | Kotlin | Java |
 |---|---|---|---|
 | **Resume** | `cb(Right(value))` | `resumeWith()` | `cont.run()` |
-| **Multi-shot?** | **Yes** — `IO` is data | No (throws!) | No (mutable state) |
+| **Multi-shot?** | **Program description:** Yes (`IO` is data) | No (throws!) | No (mutable state) |
 
-- Scala: `IO` is an ADT — `FlatMap` continuations are **plain functions**, re-interpretable
-- Kotlin & Java: continuations carry **mutable state** — consumed on resume
+- Scala: the **`IO` value** is re-runnable; each run allocates fresh fiber/continuation state
+- Kotlin & Java: each continuation instance carries **mutable state** — consumed on resume
 
 <!--
-One more difference worth noting. Scala's continuations are multi-shot — IO is just data. The FlatMap chain stores plain functions. You can interpret the same IO tree multiple times, each producing a fresh execution. Kotlin is strictly one-shot — resumeWith twice throws IllegalStateException. Java is also one-shot — mutable internal state. This is a real practical difference: Scala's approach enables retry and re-execution for free.
+One more difference worth noting. In Scala, the IO description is multi-shot because it's plain data. You can interpret the same IO value multiple times, each run creating fresh runtime state. Kotlin is strictly one-shot — resumeWith twice throws IllegalStateException. Java is also one-shot — mutable internal continuation state. This is a real practical difference: Scala's approach enables retry and re-execution at the description level.
 -->
 
 ---
