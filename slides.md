@@ -834,6 +834,14 @@ yield() copies stack frames to the heap, run() restores them. The developer neve
 
 ---
 
+<style>
+  img[alt=vt-unmount] {
+    width: 80%;
+    display: block;
+    margin: 0 auto;
+  }
+</style>
+
 # Stack Frames — From Thread to Heap and Back
 
 ```java
@@ -844,15 +852,7 @@ void foo() { bar(); }
 void bar() { Continuation.yield(SCOPE); }            // bar() [ln 2]
 ```
 
-```
-  MOUNTED (Carrier 1)             yield()              UNMOUNTED
-  Thread Stack    Heap            ──────►        Thread Stack    Heap
- ┌─────────────┐ ┌───────┐                     ┌─────────────┐ ┌─────────────┐
- │ bar() [ln 2]│ │(empty)│                     │  (free!)    │ │ bar() [ln 2]│
- │ foo()       │ └───────┘                     └─────────────┘ │ foo()       │
- │ cont.lambda │                  Carrier FREE!                │ cont.lambda │
- └─────────────┘                                               └─────────────┘
-```
+![vt-unmount](assets/vt-unmount.png)
 
 <!--
 On yield, the JVM copies stack frames from the carrier thread to the heap — the continuation is unmounted. The carrier is free to pick up other work. Only the continuation's frames are copied, not the full thread stack.
@@ -860,17 +860,17 @@ On yield, the JVM copies stack frames from the carrier thread to the heap — th
 
 ---
 
+<style>
+  img[alt=vt-remounted] {
+    width: 80%;
+    display: block;
+    margin: 0 auto;
+  }
+</style>
+
 # Stack Frames — And Back
 
-```
-  UNMOUNTED                        run()               RE-MOUNTED (Carrier 3!)
-  Thread Stack    Heap            ──────►        Thread Stack    Heap
- ┌─────────────┐ ┌─────────────┐                ┌─────────────┐ ┌───────┐
- │  (free!)    │ │ bar() [ln 2]│                │ bar() [ln 2]│ │(empty)│
- └─────────────┘ │ foo()       │                │ foo()       │ └───────┘
-                 │ cont.lambda │                │ cont.lambda │
-                 └─────────────┘                └─────────────┘
-```
+![vt-remounted](assets/vt-remounted.png)
 
 - **Re-mounted** on whichever carrier is available — not necessarily the same one
 - Only the continuation's frames are copied, not the full thread stack
@@ -934,6 +934,8 @@ Same four ingredients, three abstraction levels. Three expressions of the same b
 | **Resume** | callback re-submits fiber | `resumeWith()` at saved label | continuation remounts |
 | **Visibility** | Explicit | Compiler-enforced | Transparent |
 
+<br/>
+
 - Scala: **you** decide where suspension happens
 - Kotlin: the **compiler** decides — function coloring
 - Java: the **JVM** decides — completely invisible
@@ -955,6 +957,8 @@ Not all the continuations we create are the same:
 |---|---|---|---|
 | **Resume** | `cb(Right(value))` | `resumeWith()` | `cont.run()` |
 | **Multi-shot?** | **Program description:** Yes (`IO` is data) | No (throws!) | No (mutable state) |
+
+<br/>
 
 - Scala: the **`IO` value** is re-runnable; each run allocates fresh fiber/continuation state
 - Kotlin & Java: each continuation instance carries **mutable state** — consumed on resume
