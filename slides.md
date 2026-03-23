@@ -322,23 +322,23 @@ Concurrency is about the PROBLEM — tasks that can run in any order. Parallelis
 
 ---
 
+<style>
+  img[alt=context-switch] {
+    width: 45%;
+    display: block;
+    margin: 0 auto;
+  }
+</style>
+
 # Threads Block — And That's the Problem
 
 - When a thread calls I/O, it **blocks**
   - The **entire thread stack** is frozen
   - The OS **unmounts** the thread — another is **mounted**: **context switch**
 - Context switching is **expensive**
-  - Kernel transition, CPU cache invalidation, register save/restore
 - The OS has **no idea** what our program wants to do next
 
-```
-Task A: [ work ][ wait for I/O...   ][ work ]
-Thread:  ───────┤                    ├───────
-                ↓ OS context switch  ↓
-                 (save entire stack,   (restore entire stack,
-                  load another one)     resume from where
-                                        we left off)
-```
+![context-switch](assets/context-switch.png)
 
 <!--
 When a thread calls a database, it just sits there. The OS saves all the registers, the entire stack, and loads another thread. That's a context switch — kernel transition, invalidating CPU caches, moving kilobytes of data. The OS treats the thread as a black box: save everything, restore everything. That's the fundamental problem.
@@ -603,6 +603,14 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 
 ---
 
+<style>
+  section table {
+    display: table !important;
+    width: auto !important;
+    margin: 0 auto !important;
+  }
+</style>
+
 # Scala's Continuation Machinery
 
 - **Suspension points:** every `Async` boundary — the programmer **explicitly** chooses
@@ -612,7 +620,7 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 
 | Ingredient     | Scala (User Level)                          |
 |----------------|---------------------------------------------|
-| Continuation   | `Async` callback + `FlatMap` chain          |
+| Continuation   | `Async` callback + `FlatMap` chain         |
 | Thread Pool    | `ExecutorService` (e.g., work-stealing pool)|
 | Scheduler      | Custom run loop + fiber queue               |
 | Yield/Suspend  | `Async` case — callback-based suspension    |
@@ -875,14 +883,16 @@ On run(), the heap frames are restored onto any available carrier thread — not
 
 # Java — Same Ingredients, Runtime Level
 
-| Ingredient     | Java (Runtime)                              |
+- **Suspension points:** every blocking JDK call — **completely transparent**
+<br/>
+
+|  Ingredient     | Java (Runtime)                              |
 |----------------|---------------------------------------------|
 | Continuation   | `Continuation` class (JDK internal)         |
 | Thread Pool    | `ForkJoinPool` (carrier threads)            |
 | Scheduler      | JVM runtime scheduler                       |
 | Yield/Suspend  | `Continuation.yield()` — stack to heap      |
 
-- **Suspension points:** every blocking JDK call — **completely transparent**
 
 <!--
 Same four ingredients at the runtime level. The Continuation is a JDK-internal class. The thread pool is ForkJoinPool with carrier threads. The scheduler is built into the JVM runtime. And suspension is completely transparent — every blocking JDK call internally yields the continuation. No coloring, no Async, no suspend keyword.
