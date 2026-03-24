@@ -282,15 +282,25 @@ Welcome everyone. Today we're going to look at how three JVM languages solve the
 
 # Agenda
 
-1. The Problem
-2. Scala Fibers — Continuations at the user level
-3. Kotlin Coroutines — Continuations at compile time
-4. Java Virtual Threads — Continuations at runtime
-5. References
+1. Who Am I?
+2. The Problem
+3. Scala Fibers — Continuations at the user level
+4. Kotlin Coroutines — Continuations at compile time
+5. Java Virtual Threads — Continuations at runtime
+6. References
 
 <!--
 We'll start by understanding why OS threads are a bottleneck, then see how Scala, Kotlin, and Java each solve it. The key insight: all three implement the same pattern — continuations on thread pools. They just do it at different abstraction levels.
 -->
+
+---
+
+# Who Am I?
+
+- Hello there 👋, I'm **Riccardo Cardin**, 
+    * An Enthusiastic Scala Lover since 2011 💯
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;![w:300 h:300](./assets/github-qr.jpeg)&nbsp;&nbsp;&nbsp;&nbsp;![w:300 h:300](./assets/linkedin-qr.jpeg)&nbsp;&nbsp;&nbsp; ![w:300 h:300](./assets/blog-qr.jpeg)
 
 ---
 
@@ -900,22 +910,17 @@ Same four ingredients at the runtime level. The Continuation is a JDK-internal c
 
 ---
 
+<style>
+  img[alt=triforce] {
+    width: 55%;
+    display: block;
+    margin: 0 auto;
+  }
+</style>
+
 # The Concurrency Triangle
 
-```
-                    CONTINUATIONS  
-                        /  \
-                       /    \
-        User Level    / SAME \   Runtime Level
-        (Library)    / CORE   \  (JVM)
-                    / PATTERN  \
-                   /            \
-      Scala Fibers ──────────── Java Virtual Threads
-                   \            /
-                    \          /
-                  Kotlin Coroutines
-                    Compile Level
-```
+![triforce](assets/triforce.png)
 
 - Three languages, three abstraction levels, **one pattern**.
 
@@ -971,15 +976,15 @@ One more difference worth noting. In Scala, the IO description is multi-shot bec
 
 # References
 
-- [How do Fibers Work? A Peek Under the Hood](https://www.youtube.com/watch?v=x5_MmZVLiSM)
-- [Concurrency In Scala with Cats-Effect](https://github.com/slouc/concurrency-in-scala-with-ce)
-- [Cats Effect 3](https://www.youtube.com/watch?v=JrpFFRdf7Q8)
-- [Kotlin 101: Coroutines Quickly Explained](https://rockthejvm.com/articles/kotlin-101-coroutines)
-- [Kotlin Coroutine Internals](https://medium.com/better-programming/kotlin-coroutine-internals-49518ecf2977)
-- [Coroutines under the hood](https://kt.academy/article/cc-under-the-hood)
-- [The Ultimate Guide to Java Virtual Threads](https://rockthejvm.com/articles/the-ultimate-guide-to-java-virtual-threads)
-- [Continuations - Under the Covers](https://www.youtube.com/watch?v=6nRS6UiN7X0)
-- [Continuations: The magic behind virtual threads](https://www.youtube.com/watch?v=HQsYsUac51g)
+- 🎬 [How do Fibers Work? A Peek Under the Hood](https://www.youtube.com/watch?v=x5_MmZVLiSM)
+- 🎬 [Concurrency In Scala with Cats-Effect](https://github.com/slouc/concurrency-in-scala-with-ce)
+- 🎬 [Cats Effect 3](https://www.youtube.com/watch?v=JrpFFRdf7Q8)
+- 📚 [Kotlin 101: Coroutines Quickly Explained](https://rockthejvm.com/articles/kotlin-101-coroutines)
+- 📚 [Kotlin Coroutine Internals](https://medium.com/better-programming/kotlin-coroutine-internals-49518ecf2977)
+- 📚 [Coroutines under the hood](https://kt.academy/article/cc-under-the-hood)
+- 📚 [The Ultimate Guide to Java Virtual Threads](https://rockthejvm.com/articles/the-ultimate-guide-to-java-virtual-threads)
+- 🎬 [Continuations - Under the Covers](https://www.youtube.com/watch?v=6nRS6UiN7X0)
+- 🎬 [Continuations: The magic behind virtual threads](https://www.youtube.com/watch?v=HQsYsUac51g)
 
 ---
 
@@ -993,6 +998,7 @@ section { background-position: center top; }
 <!-- _paginate: false -->
 
 # Thank You
+## Any Questions?
 
 **Riccardo Cardin**
 Scalar 2026
