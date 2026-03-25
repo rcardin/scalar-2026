@@ -56,7 +56,7 @@ That's the idea behind fibers. Behind coroutines. Behind virtual threads. Same i
 
 Every solution we'll see today needs four things. Just four.
 
-First: what is a continuation? How do we represent it? Second: a thread pool to run them. Third: a scheduler to pick the next one. Fourth: a way to pause — to yield, to suspend, to say "I'm done for now, come back later."
+First: what is a continuation? How do we represent it? Second: a thread pool to run them — those are the workers, the actual threads that execute code. Third: a scheduler to pick the next one — that's the decision-maker, the logic that says "you go next." They're related but not the same thing: the thread pool is the "where," the scheduler is the "who's next." Fourth: a way to pause — to yield, to suspend, to say "I'm done for now, come back later."
 
 Keep these four in your head. We'll see them in Scala. Then in Kotlin. Then in Java. Every time, the same four things.
 

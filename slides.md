@@ -388,8 +388,8 @@ The OS does a heavyweight operation because it doesn't know what our program nee
 A continuation-based runtime needs four things:
 
 1. A definition of what a **continuation** is
-2. A **thread pool** to run continuations
-3. A **scheduler** to pick the next continuation to run
+2. A **thread pool** to run continuations — the **workers**
+3. A **scheduler** to pick the next continuation to run — the **decision-maker**
 4. A way to **yield** or **suspend** a continuation
 
 Let's see how **Scala**, **Kotlin**, and **Java** implement each of these.
