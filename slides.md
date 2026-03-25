@@ -275,7 +275,9 @@ section { background-position: center top; }
 **Scalar 2026**
 
 <!--
-Welcome everyone. Today we're going to look at how three JVM languages solve the same fundamental problem — and spoiler: they all end up at the same place, just at different abstraction levels.
+Today I want to show you something funny. Scala, Kotlin, and Java — three very different worlds — they all solved concurrency in the same way. Same pattern. Same pieces. They just put them in different places. And by the end of this talk, you'll see it everywhere.
+
+My name is Riccardo Cardin, and this is The Concurrency Triangle.
 -->
 
 ---
@@ -290,7 +292,7 @@ Welcome everyone. Today we're going to look at how three JVM languages solve the
 6. References
 
 <!--
-We'll start by understanding why OS threads are a bottleneck, then see how Scala, Kotlin, and Java each solve it. The key insight: all three implement the same pattern — continuations on thread pools. They just do it at different abstraction levels.
+So here's the plan. First, we'll look at the problem — why OS threads don't scale. Then we'll see how Scala fixes it with fibers, how Kotlin fixes it with coroutines, and how Java fixes it with virtual threads. And then we put them side by side and... surprise.
 -->
 
 ---
@@ -302,6 +304,12 @@ We'll start by understanding why OS threads are a bottleneck, then see how Scala
     * The creator of **YAES** (Yet Another Effect System)
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;![w:300 h:300](./assets/github-qr.jpeg)&nbsp;&nbsp;&nbsp;&nbsp;![w:300 h:300](./assets/linkedin-qr.jpeg)&nbsp;&nbsp;&nbsp; ![w:300 h:300](./assets/blog-qr.jpeg)
+
+<!--
+Quick intro — I've been doing Scala since 2011, so about fifteen years now. I also built YAES — Yet Another Effect System — a small effect system for Scala. The QR codes on screen go to my GitHub, LinkedIn, and blog if you want to connect.
+
+Ok, let's go.
+-->
 
 ---
 
@@ -328,7 +336,15 @@ Executor 2: [a] [b] [c]   ← two executors, truly simultaneous
 - Today: **concurrency** — how to interleave many tasks on limited threads
 
 <!--
-Concurrency is about the PROBLEM — tasks that can run in any order. Parallelism is about the RUNTIME — enough CPUs to run them simultaneously. You can have concurrency without parallelism: one core juggling many tasks. What we're solving today is a concurrency problem — thousands of tasks, limited threads. Who manages the interleaving, and at what cost?
+Before we start fixing things, let's make sure we agree on what we're fixing.
+
+Concurrency and parallelism — not the same thing.
+
+Concurrency is about the problem. You have many tasks, and they can run in any order. You can do concurrency with just one core — one executor juggling tasks, switching between them. Look at the diagram: Task 1 and Task 2 interleaves their execution on one executor. That's concurrency.
+
+Parallelism is about resources. You have enough CPUs to run things at the same time. Two executors, running together.
+
+Today we're talking about concurrency. Many tasks, few threads. The question is: who decides what runs next, and how much does it cost?
 -->
 
 ---
@@ -352,7 +368,15 @@ Concurrency is about the PROBLEM — tasks that can run in any order. Parallelis
 ![context-switch](assets/context-switch.png)
 
 <!--
-When a thread calls a database, it just sits there. The OS saves all the registers, the entire stack, and loads another thread. That's a context switch — kernel transition, invalidating CPU caches, moving kilobytes of data. The OS treats the thread as a black box: save everything, restore everything. That's the fundamental problem.
+Ok, so here's where things break.
+
+When a thread calls a database, or makes an HTTP request, it blocks. The whole thread just sits there. The OS steps in — it saves everything, all the registers, all the state — and loads another thread. That's a context switch.
+
+And context switches are not cheap. The OS has to go through the kernel, it trashes the CPU caches, it moves kilobytes of data around. And the worst part? The OS has no idea what our program wants to do next. So it saves everything. Just in case.
+
+Quick question for the room — how many of you have seen thread exhaustion in production? That moment when your service stops answering because all threads are just... waiting?
+
+Yeah. That's what we're fixing today. The OS manages the scheduling, but the OS doesn't know anything about our program.
 -->
 
 ---
@@ -378,7 +402,15 @@ multiplyCPS(2, 3) { multiplyResult =>
 - **Resume** it later: pick up the continuation — on **any** thread
 
 <!--
-The OS does a heavyweight operation because it doesn't know what our program needs. But WE know. When a task waits for I/O, we know exactly what should happen next — it's the next line, the callback, the "continuation." Save that tiny piece of information, free the thread. That's the idea behind fibers, coroutines, and virtual threads.
+So here's the idea. The OS doesn't know what our tasks need. But we do.
+
+When a task is waiting for I/O, we know exactly what should happen next. It's the next line of code. The callback. In fancy words: the continuation.
+
+Look at the code. In normal code, the continuation is just the next line — you don't think about it. In continuation-passing style, you make it visible: "when this finishes, call that function."
+
+So the trick is: when a task blocks, save the continuation — just that small piece — free the thread, and pick it up later on any thread.
+
+That's the idea behind fibers. Behind coroutines. Behind virtual threads. Same idea, three times.
 -->
 
 ---
@@ -395,7 +427,13 @@ A continuation-based runtime needs four things:
 Let's see how **Scala**, **Kotlin**, and **Java** implement each of these.
 
 <!--
-Every solution we'll see today needs these four ingredients. The difference is WHERE each language implements them. Scala does it in user-space libraries. Kotlin does it at compile time. Java does it inside the JVM runtime. Same recipe, different kitchens.
+Every solution we'll see today needs four things. Just four.
+
+First: what is a continuation? How do we represent it? Second: a thread pool to run them — those are the workers, the actual threads that execute code. Third: a scheduler to pick the next one — that's the decision-maker, the logic that says "you go next." They're related but not the same thing: the thread pool is the "where," the scheduler is the "who's next." Fourth: a way to pause — to yield, to suspend, to say "I'm done for now, come back later."
+
+Keep these four in your head. We'll see them in Scala. Then in Kotlin. Then in Java. Every time, the same four things.
+
+Same recipe, different kitchens.
 -->
 
 ---
@@ -416,6 +454,12 @@ section { background-position: center top; }
 ## Continuations at the **User Level**
 
 - Continuation lives in **library/runtime objects** (`FlatMap` chain + `Async` callback)
+
+<!--
+Let's start with Scala. We're at Scalar, so this is home.
+
+In Scala, the continuation lives in regular objects — FlatMap chains and Async callbacks. Nothing magic. Just data structures and functions that we build ourselves.
+-->
 
 ---
 
@@ -443,7 +487,11 @@ object IO:
 ```
 
 <!--
-Why describe instead of execute? Because a data structure is something we OWN. We can inspect it, optimize it, and most importantly — decide WHEN and WHERE to run each step. In the effect system approach, we build a tree that DESCRIBES the computation. FlatMap stores an inner IO and a function A => IO[B] — "what to do next with the result." Each flatMap call adds a link to the chain. But this is just a description — it doesn't solve concurrency yet.
+Scala's way is: don't run the computation right away. First, describe it. Build a tree of instructions.
+
+Look at the IO enum. Three cases. Pure — a value that's already done. Delay — a lazy thunk, something to run later. And FlatMap — this is the important one. It holds an inner IO and a function called cont: "when you get the result of the inner IO, call cont to decide what to do next." That cont function? That's a continuation.
+
+Why describe instead of run? Because if it's data, we own it. We can decide when to run it, where to run it, how to run it.
 -->
 
 ---
@@ -471,7 +519,9 @@ FlatMap
 - We have continuations, but we're **not using them for concurrency yet**
 
 <!--
-Each flatMap stores a function — what to do next. That IS a continuation. But if we interpret this chain top to bottom, it's no different from sequential code. When we hit Thread.sleep, the thread blocks. We have the building blocks but need one more ingredient to suspend and resume.
+So we build chains. Look at bathTime: print, then sleep, then print again. Each flatMap adds a step. You can see the tree on screen.
+
+But here's the thing — this is still sequential. If step two does Thread.sleep, the thread blocks. We have continuations in the data structure, sure, but we're not using them to free the thread yet. We have the pieces, but something is missing.
 -->
 
 ---
@@ -499,7 +549,15 @@ def unsafeRun[A](io: IO[A]): A =
 - Execution state is now a **regular object** — we can **pause**, **save**, and **resume** it
 
 <!--
-Instead of recursive calls that eat thread stack, we use a while loop and an explicit stack of continuations on the heap. This is the critical move: our execution state is now an object we OWN. We can pause this loop, save the stack, free the thread, and resume later on any thread. We just need a way to trigger suspension.
+So what are we missing? Well, two things actually.
+
+First problem: right now, if we interpret this chain with recursive calls, each flatMap eats a frame on the thread's stack. We need to move that stack somewhere we control — the heap.
+
+Look at unsafeRun. Instead of recursion, we use a while loop and our own stack — just a regular object on the heap. Hit a FlatMap? Push cont onto the stack, set inner as the current IO. Hit a Pure? Pop the next continuation, keep going.
+
+Ok, good. Now our execution state is an object we own. But does this solve the blocking problem? No. This loop still runs on one thread, top to bottom. If something blocks, the thread is still stuck. We moved the stack to the heap — that's necessary — but it's not enough.
+
+We need a second thing: a way to actually pause the loop and free the thread.
 -->
 
 ---
@@ -523,7 +581,13 @@ def sleep(millis: Long): IO[Unit] =
 - We need to **break the loop into single steps**, wrap the state in an object, and **yield the thread**
 
 <!--
-Async is an FFI to the callback world. The callback cb IS the continuation. But our current unsafeRun is a while-true loop — it blocks one thread until the whole IO completes. It has no way to pause, free the thread, and resume later when cb fires. We need to refactor the run loop: break it into single steps, wrap the continuation stack in an object, and re-submit each step to a scheduler. That object is a Fiber.
+And that's Async. This is the piece that actually solves blocking. It's the bridge to callback-based APIs.
+
+Look at sleep. It takes a callback cb, gives it to a scheduler, and the scheduler calls it later. That callback cb — that is the continuation. It's the thing that wakes up the computation.
+
+But our unsafeRun can't handle this. It's a while-true loop — it holds the thread until everything is done. There's no way to pause and come back. We need to break the loop into small steps, put the whole state in an object, and hand each step to a scheduler.
+
+That object? It's called a Fiber.
 -->
 
 ---
@@ -556,7 +620,11 @@ class IOFiber[A](io: IO[A], scheduler: Scheduler):
 - After each step: **re-submit** to scheduler — **cooperative scheduling**
 
 <!--
-A Fiber combines everything: the IO data structure, a continuation stack on the heap, and Async suspension. The run method re-submits the fiber to the scheduler after each step — that's cooperative scheduling. At Async, the thread walks away. The callback wakes it up later. A fiber is just an object — you can create millions.
+Here's the IOFiber class. Look at the run method — three branches.
+
+Pure with more continuations? Pop the next one, re-submit to the scheduler. FlatMap? Push cont, set inner as current, re-submit. Async? Register the callback, and when it fires... re-submit.
+
+After every single step, the fiber goes back to the scheduler. That's cooperative scheduling. At an Async boundary, the thread walks away. The callback brings it back. And since a fiber is just an object — you can make millions of them.
 -->
 
 ---
@@ -581,7 +649,7 @@ class Scheduler(threadPool: ExecutorService):
 - No **context switch** at the OS level
 
 <!--
-The scheduler is surprisingly simple. A queue of fibers and a thread pool. When a fiber yields, it goes back in the queue. A thread picks up the next fiber. Threads are never idle. And because we manage scheduling in user space, we never pay OS context switch costs.
+The scheduler is simple. Really simple. A queue of fibers and a thread pool. Fiber yields? Back in the queue. Thread free? Pick the next fiber. Threads are always busy. No OS context switches. That's it.
 -->
 
 ---
@@ -609,7 +677,7 @@ val morningRoutine: IO[Unit] = for {
 - Both tasks run **concurrently** — **no OS threads wasted**
 
 <!--
-We start two fibers. Each builds a chain of continuations via flatMap. When they hit sleep, they suspend — the thread is freed. The scheduler runs other fibers. When the timer fires, the fiber resumes. Two concurrent tasks, potentially on a single thread, zero context switches.
+And here's the result. We start two fibers — bathTime and boilingWater. Each builds a chain of continuations. When they hit sleep, they suspend — thread is free. The scheduler runs something else. Timer fires, fiber wakes up. Two tasks, maybe one thread, zero context switches.
 -->
 
 ---
@@ -637,7 +705,11 @@ We start two fibers. Each builds a chain of continuations via flatMap. When they
 | Yield/Suspend  | `Async` case — callback-based suspension    |
 
 <!--
-The continuation is the Async callback that resumes a fiber's FlatMap chain. The programmer decides where suspension happens — every Async boundary. You see it, you control it. Our toy runtime re-submits to the scheduler after every single step. Real libraries like Cats Effect, ZIO, and Kyo batch many synchronous steps in a tight loop — typically around 1024 — before yielding, which dramatically reduces scheduling overhead. They also use work-stealing thread pools instead of a simple fixed pool, support fiber cancellation with finalizer cleanup, and provide a structured error channel throughout the entire IO type. These are the optimizations that make these libraries production-ready.
+Let me wrap up the Scala part. The continuation is the Async callback that wakes up a fiber's FlatMap chain. You, the programmer, choose where suspension happens. You see it, you control it.
+
+Our toy version re-submits after every step. Real libraries — Cats Effect, ZIO, Kyo — they batch about 1024 steps before yielding. They use work-stealing pools. They handle cancellation. That's what makes them production-ready.
+
+Now look at the table. Four rows. Continuation, thread pool, scheduler, yield. Remember these four rows. You're about to see them again.
 -->
 
 ---
@@ -657,6 +729,10 @@ section { background-position: center top; }
 ## Continuations at **Compile Time**
 
 - Continuation lives in a **compiler-generated state machine** (`Continuation<T>`)
+
+<!--
+Now we cross the border to Kotlin. And this is where it gets fun — because Kotlin solves the same problem, but the continuation lives in a completely different place. Not in library objects. In a state machine that the compiler builds for you.
+-->
 
 ---
 
@@ -685,7 +761,11 @@ fun bathTime(callerContinuation: Continuation<*>): Any {
 ```
 
 <!--
-Kotlin takes a completely different approach. Mark a function as suspend, and the compiler rewrites it. It adds a Continuation parameter and splits the function body at every suspension point. Each segment becomes a branch in a state machine.
+In Kotlin, you write a suspend function. It looks like normal code. But the compiler changes it. It adds a Continuation parameter and splits the body at every suspension point.
+
+Look at bathTime. Three lines. Looks simple. But the compiler turns it into something different — a state machine with a Continuation parameter.
+
+Does this feel familiar? A function that takes a callback for "what to do next"? We just saw this five minutes ago in Scala.
 -->
 
 ---
@@ -713,7 +793,13 @@ fun bathTime(callerContinuation: Continuation<*>): Any {
 - The `BathTimeSM` object holds **state** between calls
 
 <!--
-First call: label is 0, we log, set label to 1, call delay. delay returns COROUTINE_SUSPENDED. The thread is free. Later, when the timer fires, delay calls sm.resumeWith(). bathTime is called AGAIN with the same state machine. Now label is 1, so we jump to "Done with the bath." The BathTimeSM object IS the continuation.
+Here's what the compiler actually makes. Look at the labels.
+
+Label 0: run the first part, log, set label to 1, call delay. If delay says COROUTINE_SUSPENDED — return. Thread is free.
+
+Label 1: when delay is done, it calls sm.resumeWith(). The function runs again with the same state machine. Label is 1 now, so we jump to "Done with the bath."
+
+The BathTimeSM object holds the state between calls. It is the continuation. Same job as Scala's Async callback plus FlatMap chain. Just built by the compiler, not in a library at user level.
 -->
 
 ---
@@ -735,16 +821,20 @@ suspend fun delay(ms: Long) = suspendCoroutine { continuation ->
 - Same pattern as Scala's `Async`:
 
 ```scala
-def sleep(millis: Long): IO[Unit] =
+ddef sleep(millis: Long): IO[Unit] =
   IO.Async { cb =>    // cb is the continuation!
-    Timer().schedule(() => cb(Right(())), millis)
+    scheduler.schedule(() => cb(Right(())), millis, MILLISECONDS)
   }
 ```
 
 - Both register a callback — when it fires, **resume the computation**
 
 <!--
-suspendCoroutine gives you the continuation object. You hand it to a Timer. When it fires, resumeWith resumes the coroutine. Now look at Scala's Async — same pattern. Register a callback, resume when done. Different shapes, same role.
+Now look at suspendCoroutine. This is a function from the Kotlin standard library — it's how you get access to the raw continuation object. You take it, hand it to a Timer, and when the timer fires, resumeWith picks up the coroutine.
+
+Now look at the Scala code right below. IO.Async — you get a callback cb, you hand it to a Timer, and when the timer fires, you call cb. Same thing.
+
+Both schedule a timer. Both resume via callback when the time is up. Different shape, same job. If you squint a little, suspendCoroutine is just Kotlin's version of Async.
 -->
 
 ---
@@ -769,7 +859,9 @@ public interface Continuation<in T> {
 | Yield/Suspend  | `COROUTINE_SUSPENDED` return value          |
 
 <!--
-Same four ingredients. The Continuation is compiler-generated with resumeWith — that's CPS. The Dispatcher is the scheduler. The suspension points are every call to a suspend function. The compiler enforces this through function coloring — you MUST mark suspendable functions with suspend.
+Same four things. Continuation is compiler-generated, with resumeWith. The Dispatcher is the scheduler. Suspension happens at every suspend call, and the compiler makes sure you can't miss it — that's function coloring.
+
+There's the table again. Four rows. Same four rows. See the pattern?
 -->
 
 ---
@@ -791,6 +883,10 @@ section { background-position: center top; }
 ## Continuations at **Runtime**
 
 - Continuation lives in the **JVM runtime** (mounted/unmounted by the VM)
+
+<!--
+Last one. Java. And Java goes one level deeper — into the JVM itself. No library objects. No compiler tricks. The runtime just does it.
+-->
 
 ---
 
@@ -817,7 +913,11 @@ VirtualThread(..., Runnable task) {
 - `Thread.sleep`, `Socket.read` — **unmount** automatically
 
 <!--
-Java: no new syntax, no new types. Just Thread.ofVirtual(). Under the hood, VirtualThread wraps a Continuation object. A carrier thread is a platform thread that actually executes the virtual thread's code. Mount means the virtual thread's stack frames are loaded onto the carrier. When the virtual thread calls sleep or does I/O, the JVM unmounts it — calls Continuation.yield(), copies the stack to the heap, and frees the carrier thread. Completely invisible to the developer.
+Look at this code. Thread.ofVirtual().start(). That's all. No IO, no suspend, no flatMap. Just Thread.sleep. And it works.
+
+Under the hood, VirtualThread wraps a Continuation object. A carrier thread is a real OS thread that runs the virtual thread. When the virtual thread calls sleep or reads from a socket, the JVM takes the stack frames, copies them to the heap, and frees the carrier.
+
+Wait — "copies the stack to the heap"? We've heard this before. That's exactly what our Scala run loop does. Same idea, different level.
 -->
 
 ---
@@ -841,7 +941,11 @@ cont.isDone();    // true
 - The developer **never calls** `yield()` directly — every blocking JDK call does it
 
 <!--
-yield() copies stack frames to the heap, run() restores them. The developer never calls yield() directly. Every blocking call in the JDK internally contains a Continuation.yield(). No coloring, no Async, no suspend keyword. The JVM handles it for you.
+Here's the raw Continuation API. Important: this is an internal JDK class — it's not part of the public API. You're not supposed to use it directly. But it's useful to see how it works.
+
+Three calls: run() prints "before." yield() pauses — stack goes to the heap. Second run() resumes — prints "after."
+
+The developer never calls yield() directly. Every blocking call in the JDK — Thread.sleep, Socket.read, BlockingQueue.take — calls Continuation.yield() inside. You never see it. That's the whole point.
 -->
 
 ---
@@ -867,7 +971,7 @@ void bar() { Continuation.yield(SCOPE); }            // bar() [ln 2]
 ![vt-unmount](assets/vt-unmount.png)
 
 <!--
-On yield, the JVM copies stack frames from the carrier thread to the heap — the continuation is unmounted. The carrier is free to pick up other work. Only the continuation's frames are copied, not the full thread stack.
+The diagram shows it. On yield, the JVM takes the continuation's stack frames and moves them to the heap. Not the whole thread — just the continuation's frames. The carrier thread is now free.
 -->
 
 ---
@@ -888,7 +992,7 @@ On yield, the JVM copies stack frames from the carrier thread to the heap — th
 - Only the continuation's frames are copied, not the full thread stack
 
 <!--
-On run(), the heap frames are restored onto any available carrier thread — not necessarily the same one. bar() resumes exactly where it left off. The cost is O(stack depth), not O(full thread stack). No context switch at all — just copying frames back from the heap.
+And on run(), those frames go back — onto any carrier thread, not necessarily the same one. bar() picks up right where it stopped. No context switch at all. Just copying frames back from the heap.
 -->
 
 ---
@@ -907,7 +1011,9 @@ On run(), the heap frames are restored onto any available carrier thread — not
 
 
 <!--
-Same four ingredients at the runtime level. The Continuation is a JDK-internal class. The thread pool is ForkJoinPool with carrier threads. The scheduler is built into the JVM runtime. And suspension is completely transparent — every blocking JDK call internally yields the continuation. No coloring, no Async, no suspend keyword.
+Same four things, last time. Continuation is a JDK-internal class. Thread pool is a ForkJoinPool of carriers. Scheduler is inside the JVM. And suspension? Totally invisible — every blocking JDK call yields the continuation for you.
+
+There's the table. Four rows. Third time. Same four rows.
 -->
 
 ---
@@ -927,7 +1033,13 @@ Same four ingredients at the runtime level. The Continuation is a JDK-internal c
 - Three languages, three abstraction levels, **one pattern**.
 
 <!--
-Same four ingredients, three abstraction levels. Three expressions of the same breakthrough, with different trade-offs in control versus convenience.
+And there it is. The triangle.
+
+Three languages. Three levels. One pattern. Continuations on thread pools, with a scheduler and a way to yield.
+
+Scala builds it in user space — you see everything, you control everything. Kotlin puts it in the compiler — you see the suspend keyword, the rest is hidden. Java puts it in the runtime — you see nothing at all.
+
+Same idea. Three different trade-offs between control and convenience.
 -->
 
 ---
@@ -948,7 +1060,11 @@ Same four ingredients, three abstraction levels. Three expressions of the same b
 - Java: the **JVM** decides — completely invisible
 
 <!--
-Same suspend/resume lifecycle, three owners. Scala keeps continuation machinery in library data structures and callbacks. Kotlin moves it into compiler-generated state machines. Java pushes it into the JVM runtime, making suspension transparent at call sites.
+Look at the table. Continuation, suspension, resume, visibility. Three columns, and every row is the same concept in different clothes.
+
+Scala: you choose where to suspend. Kotlin: the compiler chooses. Java: the JVM chooses.
+
+More control means more work. More transparency means less control. There's no winner here. It's a spectrum. Your project decides where you belong on it.
 -->
 
 ---
@@ -971,7 +1087,11 @@ Not all the continuations we create are the same:
 - Kotlin & Java: each continuation instance carries **mutable state** — consumed on resume
 
 <!--
-One more difference worth noting. In Scala, the IO description is multi-shot because it's plain data. You can interpret the same IO value multiple times, each run creating fresh runtime state. Kotlin is strictly one-shot — resumeWith twice throws IllegalStateException. Java is also one-shot — mutable internal continuation state. This is a real practical difference: Scala's approach enables retry and re-execution at the description level.
+One more thing before we finish. In Scala, the IO is data. You can run the same IO as many times as you want — each time it creates fresh state. That's multi-shot. You get retry, re-execution, speculative execution for free.
+
+Kotlin? Strictly one-shot. Call resumeWith twice and it throws. Java? Also one-shot — the continuation has mutable state that gets used up.
+
+This is a real difference. Scala gives you something the others don't: your program is a value. You can re-run it.
 -->
 
 ---
@@ -987,6 +1107,10 @@ One more difference worth noting. In Scala, the IO description is multi-shot bec
 - 📚 [The Ultimate Guide to Java Virtual Threads](https://rockthejvm.com/articles/the-ultimate-guide-to-java-virtual-threads)
 - 🎬 [Continuations - Under the Covers](https://www.youtube.com/watch?v=6nRS6UiN7X0)
 - 🎬 [Continuations: The magic behind virtual threads](https://www.youtube.com/watch?v=HQsYsUac51g)
+
+<!--
+The references are on screen. If you want to go deeper, the talks by Daniel Ciocîrlan and Ron Pressler are great starting points.
+-->
 
 ---
 
@@ -1004,3 +1128,11 @@ section { background-position: center top; }
 
 **Riccardo Cardin**
 Scalar 2026
+
+<!--
+So here's what to take home. Next time someone tells you that fibers, coroutines, and virtual threads are completely different things — just smile, and draw them a triangle.
+
+Four ingredients. One pattern. Three levels.
+
+Thank you. Questions?
+-->
