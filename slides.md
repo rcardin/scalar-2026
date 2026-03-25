@@ -390,6 +390,7 @@ Yeah. That's what we're fixing today. The OS manages the scheduling, but the OS 
 // The continuation is implicit (it's the next line)
 val result = add(1, multiply(2, 3))
 println(s"The result is: $result")
+
 // Continuation-Passing Style — the continuation is explicit
 multiplyCPS(2, 3) { multiplyResult =>
   addCPS(1, multiplyResult) { addResult =>
@@ -549,15 +550,9 @@ def unsafeRun[A](io: IO[A]): A =
 - Execution state is now a **regular object** — we can **pause**, **save**, and **resume** it
 
 <!--
-So what are we missing? Well, two things actually.
+Two problems to solve. First: recursive flatMap calls eat stack frames. Fix: replace recursion with a while loop and our own stack on the heap. FlatMap? Push cont, set inner as current. Pure? Pop the next continuation.
 
-First problem: right now, if we interpret this chain with recursive calls, each flatMap eats a frame on the thread's stack. We need to move that stack somewhere we control — the heap.
-
-Look at unsafeRun. Instead of recursion, we use a while loop and our own stack — just a regular object on the heap. Hit a FlatMap? Push cont onto the stack, set inner as the current IO. Hit a Pure? Pop the next continuation, keep going.
-
-Ok, good. Now our execution state is an object we own. But does this solve the blocking problem? No. This loop still runs on one thread, top to bottom. If something blocks, the thread is still stuck. We moved the stack to the heap — that's necessary — but it's not enough.
-
-We need a second thing: a way to actually pause the loop and free the thread.
+Now our execution state is a heap object we control. But the thread is still stuck in the loop — if something blocks, we can't free it. Heap stack: necessary, not sufficient. We still need a way to pause and release the thread.
 -->
 
 ---
@@ -581,13 +576,9 @@ def sleep(millis: Long): IO[Unit] =
 - We need to **break the loop into single steps**, wrap the state in an object, and **yield the thread**
 
 <!--
-And that's Async. This is the piece that actually solves blocking. It's the bridge to callback-based APIs.
+Async is the piece that solves blocking. Look at sleep: it hands a callback cb to a scheduler. When the timer fires, cb resumes the computation. That callback is the continuation.
 
-Look at sleep. It takes a callback cb, gives it to a scheduler, and the scheduler calls it later. That callback cb — that is the continuation. It's the thing that wakes up the computation.
-
-But our unsafeRun can't handle this. It's a while-true loop — it holds the thread until everything is done. There's no way to pause and come back. We need to break the loop into small steps, put the whole state in an object, and hand each step to a scheduler.
-
-That object? It's called a Fiber.
+Problem: unsafeRun is a while-true loop — it never releases the thread. We need to break execution into single steps, wrap the state in an object, and hand each step to a scheduler. That object is a Fiber.
 -->
 
 ---
@@ -620,11 +611,9 @@ class IOFiber[A](io: IO[A], scheduler: Scheduler):
 - After each step: **re-submit** to scheduler — **cooperative scheduling**
 
 <!--
-Here's the IOFiber class. Look at the run method — three branches.
+The run method has three branches. Pure: pop the next continuation, re-submit. FlatMap: push cont, re-submit. Async: register the callback — when it fires, re-submit.
 
-Pure with more continuations? Pop the next one, re-submit to the scheduler. FlatMap? Push cont, set inner as current, re-submit. Async? Register the callback, and when it fires... re-submit.
-
-After every single step, the fiber goes back to the scheduler. That's cooperative scheduling. At an Async boundary, the thread walks away. The callback brings it back. And since a fiber is just an object — you can make millions of them.
+Every step ends with re-submit. That's cooperative scheduling. At an Async boundary, the fiber suspends and releases the thread. When the callback fires, the fiber is re-submitted to the scheduler for execution. A fiber is just an object — you can have millions.
 -->
 
 ---
@@ -1097,33 +1086,6 @@ Look at the table. Continuation, suspension, resume, visibility. Three columns, 
 Scala: you choose where to suspend. Kotlin: the compiler chooses. Java: the JVM chooses.
 
 More control means more work. More transparency means less control. There's no winner here. It's a spectrum. Your project decides where you belong on it.
--->
-
----
-
-# One-Shot vs. Multi-Shot
-
-Not all the continuations we create are the same:
-
-- **One-shot**: resumed **exactly once** — then consumed
-- **Multi-shot**: can be **duplicated** and resumed **multiple times**
-
-| | Scala | Kotlin | Java |
-|---|---|---|---|
-| **Resume** | `cb(Right(value))` | `resumeWith()` | `cont.run()` |
-| **Multi-shot?** | **Program description:** Yes (`IO` is data) | No (throws!) | No (mutable state) |
-
-<br/>
-
-- Scala: the **`IO` value** is re-runnable; each run allocates fresh fiber/continuation state
-- Kotlin & Java: each continuation instance carries **mutable state** — consumed on resume
-
-<!--
-One more thing before we finish. In Scala, the IO is data. You can run the same IO as many times as you want — each time it creates fresh state. That's multi-shot. You get retry, re-execution, speculative execution for free.
-
-Kotlin? Strictly one-shot. Call resumeWith twice and it throws. Java? Also one-shot — the continuation has mutable state that gets used up.
-
-This is a real difference. Scala gives you something the others don't: your program is a value. You can re-run it.
 -->
 
 ---

@@ -84,33 +84,21 @@ But here's the thing — this is still sequential. If step two does `Thread.slee
 
 ## The Run Loop (Slide 11)
 
-So what are we missing? Well, two things actually.
+Two problems to solve. First: recursive `flatMap` calls eat stack frames. Fix: replace recursion with a while loop and our own stack on the heap. `FlatMap`? Push `cont`, set `inner` as current. `Pure`? Pop the next continuation.
 
-First problem: right now, if we interpret this chain with recursive calls, each `flatMap` eats a frame on the thread's stack. We need to move that stack somewhere we control — the heap.
-
-Look at `unsafeRun`. Instead of recursion, we use a while loop and our own stack — just a regular object on the heap. Hit a `FlatMap`? Push `cont` onto the stack, set `inner` as the current IO. Hit a `Pure`? Pop the next continuation, keep going.
-
-Ok, good. Now our execution state is an object we own. But does this solve the blocking problem? No. This loop still runs on one thread, top to bottom. If something blocks, the thread is still stuck. We moved the stack to the heap — that's necessary — but it's not enough.
-
-We need a second thing: a way to actually pause the loop and free the thread.
+Now our execution state is a heap object we control. But the thread is still stuck in the loop — if something blocks, we can't free it. Heap stack: necessary, not sufficient. We still need a way to pause and release the thread.
 
 ## Async — The Real Continuation (Slide 12)
 
-And that's `Async`. This is the piece that actually solves blocking. It's the bridge to callback-based APIs.
+`Async` is the piece that solves blocking. Look at `sleep`: it hands a callback `cb` to a scheduler. When the timer fires, `cb` resumes the computation. That callback is the continuation.
 
-Look at `sleep`. It takes a callback `cb`, gives it to a scheduler, and the scheduler calls it later. That callback `cb` — that is the continuation. It's the thing that wakes up the computation.
-
-But our `unsafeRun` can't handle this. It's a while-true loop — it holds the thread until everything is done. There's no way to pause and come back. We need to break the loop into small steps, put the whole state in an object, and hand each step to a scheduler.
-
-That object? It's called a Fiber.
+Problem: `unsafeRun` is a while-true loop — it never releases the thread. We need to break execution into single steps, wrap the state in an object, and hand each step to a scheduler. That object is a Fiber.
 
 ## Fibers — Putting It All Together (Slide 13)
 
-Here's the `IOFiber` class. Look at the `run` method — three branches.
+The `run` method has three branches. `Pure`: pop the next continuation, re-submit. `FlatMap`: push `cont`, re-submit. `Async`: register the callback — when it fires, re-submit.
 
-`Pure` with more continuations? Pop the next one, re-submit to the scheduler. `FlatMap`? Push `cont`, set `inner` as current, re-submit. `Async`? Register the callback, and when it fires... re-submit.
-
-After every single step, the fiber goes back to the scheduler. That's cooperative scheduling. At an `Async` boundary, the thread walks away. The callback brings it back. And since a fiber is just an object — you can make millions of them.
+Every step ends with re-submit. That's cooperative scheduling. At an `Async` boundary, the fiber suspends and releases the thread. When the callback fires, the fiber is re-submitted to the scheduler for execution. A fiber is just an object — you can have millions.
 
 ## The Scheduler (Slide 14)
 
