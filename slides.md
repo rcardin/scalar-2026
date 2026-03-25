@@ -299,6 +299,7 @@ We'll start by understanding why OS threads are a bottleneck, then see how Scala
 
 - Hello there 👋, I'm **Riccardo Cardin**, 
     * An Enthusiastic Scala Lover since 2011 💯
+    * The creator of **YAES** (Yet Another Effect System)
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;![w:300 h:300](./assets/github-qr.jpeg)&nbsp;&nbsp;&nbsp;&nbsp;![w:300 h:300](./assets/linkedin-qr.jpeg)&nbsp;&nbsp;&nbsp; ![w:300 h:300](./assets/blog-qr.jpeg)
 
@@ -427,7 +428,7 @@ section { background-position: center top; }
 enum IO[+A]:
   case Pure(value: A)
   case Delay(thunk: () => A)
-  case FlatMap[A, B](io: IO[A], cont: A => IO[B]) extends IO[B]
+  case FlatMap[A, B](inner: IO[A], cont: A => IO[B]) extends IO[B]
 ```
 
 - `Pure` — a completed value | `Delay` — a lazy thunk | `FlatMap` — **what to do next**
@@ -442,7 +443,7 @@ object IO:
 ```
 
 <!--
-Why describe instead of execute? Because a data structure is something we OWN. We can inspect it, optimize it, and most importantly — decide WHEN and WHERE to run each step. In the effect system approach, we build a tree that DESCRIBES the computation. FlatMap stores an IO and a function A => IO[B] — "what to do next with the result." Each flatMap call adds a link to the chain. But this is just a description — it doesn't solve concurrency yet.
+Why describe instead of execute? Because a data structure is something we OWN. We can inspect it, optimize it, and most importantly — decide WHEN and WHERE to run each step. In the effect system approach, we build a tree that DESCRIBES the computation. FlatMap stores an inner IO and a function A => IO[B] — "what to do next with the result." Each flatMap call adds a link to the chain. But this is just a description — it doesn't solve concurrency yet.
 -->
 
 ---
@@ -735,8 +736,8 @@ suspend fun delay(ms: Long) = suspendCoroutine { continuation ->
 
 ```scala
 def sleep(millis: Long): IO[Unit] =
-  IO.Async { cb =>
-    scheduler.schedule(() => cb(Right(())), millis, MILLISECONDS)
+  IO.Async { cb =>    // cb is the continuation!
+    Timer().schedule(() => cb(Right(())), millis)
   }
 ```
 
@@ -835,6 +836,7 @@ cont.run();       // prints "after"
 cont.isDone();    // true
 ```
 
+- `Continuation` is an **internal JDK class** — not part of the public API
 - `yield()` **copies stack frames to the heap** — `run()` restores them
 - The developer **never calls** `yield()` directly — every blocking JDK call does it
 
@@ -886,7 +888,7 @@ On yield, the JVM copies stack frames from the carrier thread to the heap — th
 - Only the continuation's frames are copied, not the full thread stack
 
 <!--
-On run(), the heap frames are restored onto any available carrier thread — not necessarily the same one. bar() resumes exactly where it left off. The cost is O(stack depth), not O(full thread stack). Lightweight context switching without OS involvement.
+On run(), the heap frames are restored onto any available carrier thread — not necessarily the same one. bar() resumes exactly where it left off. The cost is O(stack depth), not O(full thread stack). No context switch at all — just copying frames back from the heap.
 -->
 
 ---
