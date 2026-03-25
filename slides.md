@@ -357,7 +357,7 @@ Today we're talking about concurrency. Many tasks, few threads. The question is:
   }
 </style>
 
-# Threads Block — And That's the Problem
+# Threads Block, And That's the Problem
 
 - When a thread calls I/O, it **blocks**
   - The **entire thread stack** is frozen
@@ -464,7 +464,7 @@ In Scala, the continuation lives in regular objects — FlatMap chains and Async
 
 ---
 
-# `IO` — Describing a Program as Data
+# `IO`, Describing a Program as Data
 
 - Scala's approach: **describe** the computation, **don't execute** it immediately
 - The `IO` monad is an **ADT** — a tree of instructions
@@ -497,7 +497,7 @@ Why describe instead of run? Because if it's data, we own it. We can decide when
 
 ---
 
-# `FlatMap` Chains — Sequential, Not Yet Concurrent
+# `FlatMap` Chains: Sequential, Not Yet Concurrent
 
 ```scala
 val bathTime: IO[Unit] =
@@ -527,7 +527,7 @@ But here's the thing — this is still sequential. If step two does Thread.sleep
 
 ---
 
-# The Run Loop — A Trampoline on the Heap
+# The Run Loop: A Trampoline on the Heap
 
 - Key insight: move the **call stack** from the **thread** to the **heap**
 
@@ -557,7 +557,7 @@ Now our execution state is a heap object we control. But the thread is still stu
 
 ---
 
-# `Async` — The Real Continuation
+# `Async`, The Real Continuation
 
 - `Async` bridges **callback-based APIs** into the `IO` world
 
@@ -587,7 +587,7 @@ Problem: unsafeRun is a while-true loop — it never releases the thread. We nee
   section code { font-size: 20px; }
 </style>
 
-# Fibers — Putting It All Together
+# Fibers: Putting It All Together
 
 ```scala
 class IOFiber[A](io: IO[A], scheduler: Scheduler):
@@ -618,7 +618,7 @@ Every step ends with re-submit. That's cooperative scheduling. At an Async bound
 
 ---
 
-# The Scheduler — Cooperative Scheduling
+# The Scheduler: Cooperative Scheduling
 
 ```scala
 class Scheduler(threadPool: ExecutorService):
@@ -643,7 +643,7 @@ The scheduler is simple. Really simple. A queue of fibers and a thread pool. Fib
 
 ---
 
-# Putting It All Together — Morning Routine
+# Putting It All Together
 
 ```scala
 val bathTime: IO[Unit] = IO.delay(println("Going to the bathroom"))
@@ -759,7 +759,7 @@ Does this feel familiar? A function that takes a callback for "what to do next"?
 
 ---
 
-# The State Machine — Step by Step
+# The State Machine Step by Step
 
 ```kotlin
 fun bathTime(callerContinuation: Continuation<*>): Any {
@@ -793,7 +793,7 @@ The BathTimeSM object holds the state between calls. It is the continuation. Sam
 
 ---
 
-# `resumeWith` — The Continuation in Action
+# `resumeWith`: The Continuation in Action
 
 - `suspendCoroutine` suspends and provides the `Continuation` — Kotlin's `Async`
 
@@ -828,7 +828,7 @@ Both schedule a timer. Both resume via callback when the time is up. Different s
 
 ---
 
-# Kotlin — Same Ingredients, Compiler-Generated
+# Kotlin: Same Ingredients, Compiler-Generated
 
 ```kotlin
 public interface Continuation<in T> {
@@ -947,7 +947,7 @@ The developer never calls yield() directly. Every blocking call in the JDK — T
   }
 </style>
 
-# Stack Frames — From Thread to Heap and Back
+# Stack Frames: From Thread to Heap
 
 ```java
 Continuation cont = new Continuation(SCOPE, () -> { // cont.lambda
@@ -973,7 +973,7 @@ The diagram shows it. On yield, the JVM takes the continuation's stack frames an
   }
 </style>
 
-# Stack Frames — And Back
+# ...And Back
 
 ![vt-remounted](assets/vt-remounted.png)
 
@@ -986,7 +986,7 @@ And on run(), those frames go back — onto any carrier thread, not necessarily 
 
 ---
 
-# Inside `Thread.sleep` — The Yield Chain
+# Inside `Thread.sleep`: The Yield Chain
 
 ```java
 // Thread.sleep (simplified from JDK source)
@@ -1018,7 +1018,7 @@ So Thread.sleep on a virtual thread is non-blocking. You write blocking code, bu
 
 ---
 
-# Java — Same Ingredients, Runtime Level
+# Java: Same Ingredients, Runtime Level
 
 - **Suspension points:** every blocking JDK call — **completely transparent**
 <br/>
