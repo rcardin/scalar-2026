@@ -997,6 +997,38 @@ And on run(), those frames go back — onto any carrier thread, not necessarily 
 
 ---
 
+# Inside `Thread.sleep` — The Yield Chain
+
+```java
+// Thread.sleep (simplified from JDK source)
+public static void sleep(Duration duration) {
+    if (currentThread() instanceof VirtualThread vt) {
+        vt.sleepNanos(duration.toNanos());   // ① virtual path
+    } else { /* platform thread — OS sleep */ }
+}
+private void sleepNanos(long nanos) {
+    parkNanos(nanos);                        // ② delegate to park
+}
+// VirtualThread.park → eventually calls:
+private void yieldContinuation() {
+    Continuation.yield(SCOPE);               // ③ stack → heap 💡
+}
+```
+
+- `Thread.sleep` **detects** it's on a virtual thread and **parks** instead of blocking
+- Parking triggers `Continuation.yield()` — same primitive we just saw
+
+<!--
+This is the magic trick. When you call Thread.sleep on a virtual thread, the JDK doesn't call the OS sleep. It checks — am I on a virtual thread? If yes, it parks instead.
+
+Parking means: call Continuation.yield(). That copies the stack to the heap and frees the carrier. Then a scheduler timer fires after the delay, and run() restores the frames on whichever carrier is free.
+
+So Thread.sleep on a virtual thread is non-blocking. You write blocking code, but under the hood the JVM turns it into a yield-and-resume. Same thing Scala's Async does with callbacks, same thing Kotlin's delay does with suspendCoroutine. Three languages, same trick, different level.
+-->
+
+
+---
+
 # Java — Same Ingredients, Runtime Level
 
 - **Suspension points:** every blocking JDK call — **completely transparent**
