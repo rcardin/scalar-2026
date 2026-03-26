@@ -885,9 +885,9 @@ Last one. Java. And Java goes one level deeper — into the JVM itself. No libra
 
 ```java
 Thread vt = Thread.ofVirtual().start(() -> {
-    System.out.println("Going to the bathroom");
+    IO.println("Going to the bathroom");
     Thread.sleep(Duration.ofMillis(500));
-    System.out.println("Done with the bath");
+    IO.println("Done with the bath");
 });
 
 // Inside VirtualThread (JDK source code)
