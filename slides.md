@@ -885,9 +885,9 @@ Last one. Java. And Java goes one level deeper — into the JVM itself. No libra
 
 ```java
 Thread vt = Thread.ofVirtual().start(() -> {
-    IO.println("Going to the bathroom");
+    System.out.println("Going to the bathroom");
     Thread.sleep(Duration.ofMillis(500));
-    IO.println("Done with the bath");
+    System.out.println("Done with the bath");
 });
 
 // Inside VirtualThread (JDK source code)
@@ -1018,7 +1018,7 @@ So Thread.sleep on a virtual thread is non-blocking. You write blocking code, bu
 
 ---
 
-# Java: Same Ingredients, Runtime Level
+# Java Same Ingredients, Runtime Level
 
 - **Suspension points:** every blocking JDK call — **completely transparent**
 <br/>
@@ -1087,6 +1087,34 @@ Scala: you choose where to suspend. Kotlin: the compiler chooses. Java: the JVM 
 
 More control means more work. More transparency means less control. There's no winner here. It's a spectrum. Your project decides where you belong on it.
 -->
+
+---
+
+# One-Shot vs. Multi-Shot
+
+Not all the continuations we create are the same:
+
+- **One-shot**: resumed **exactly once** — then consumed
+- **Multi-shot**: can be **duplicated** and resumed **multiple times**
+
+| | Scala | Kotlin | Java |
+|---|---|---|---|
+| **Resume** | `cb(Right(value))` | `resumeWith()` | `cont.run()` |
+| **Multi-shot?** | **Program description:** Yes (`IO` is data) | No (throws!) | No (mutable state) |
+
+<br/>
+
+- Scala: the **`IO` value** is re-runnable; each run allocates fresh fiber/continuation state
+- Kotlin & Java: each continuation instance carries **mutable state** — consumed on resume
+
+<!--
+One more thing before we finish. In Scala, the IO is data. You can run the same IO as many times as you want — each time it creates fresh state. That's multi-shot. You get retry, re-execution, speculative execution for free.
+
+Kotlin? Strictly one-shot. Call resumeWith twice and it throws. Java? Also one-shot — the continuation has mutable state that gets used up.
+
+This is a real difference. Scala gives you something the others don't: your program is a value. You can re-run it.
+-->
+
 
 ---
 
