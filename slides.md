@@ -405,9 +405,9 @@ multiplyCPS(2, 3) { multiplyResult =>
 <!--
 So here's the idea. The OS doesn't know what our tasks need. But we do.
 
-When a task is waiting for I/O, we know exactly what should happen next. It's the next line of code. The callback. In fancy words: the continuation.
+When a task is waiting for I/O, we know exactly what should happen next. It's the next line of code. In fancy words: the continuation.
 
-Look at the code. In normal code, the continuation is just the next line — you don't think about it. In continuation-passing style, you make it visible: "when this finishes, call that function."
+Look at the code. In normal code, the continuation is just the next line — you don't think about it. In continuation-passing style, you make it visible using a callback: "when this finishes, call that function."
 
 So the trick is: when a task blocks, save the continuation — just that small piece — free the thread, and pick it up later on any thread.
 
@@ -457,7 +457,7 @@ section { background-position: center top; }
 - Continuation lives in **library/runtime objects** (`FlatMap` chain + `Async` callback)
 
 <!--
-Let's start with Scala. We're at Scalar, so this is home.
+Let's start with Scala. We're at Scalar, after all.
 
 In Scala, the continuation lives in regular objects — FlatMap chains and Async callbacks. Nothing magic. Just data structures and functions that we build ourselves.
 -->
@@ -613,7 +613,7 @@ class IOFiber[A](io: IO[A], scheduler: Scheduler):
 <!--
 The run method has three branches. Pure: pop the next continuation, re-submit. FlatMap: push cont, re-submit. Async: register the callback — when it fires, re-submit.
 
-Every step ends with re-submit. That's cooperative scheduling. At an Async boundary, the fiber suspends and releases the thread. When the callback fires, the fiber is re-submitted to the scheduler for execution. A fiber is just an object — you can have millions.
+Every step ends with re-submit. At an Async boundary, the fiber suspends and releases the thread. When the callback fires, the fiber is re-submitted to the scheduler for execution. A fiber is just an object — you can have millions.
 -->
 
 ---
@@ -885,9 +885,9 @@ Last one. Java. And Java goes one level deeper — into the JVM itself. No libra
 
 ```java
 Thread vt = Thread.ofVirtual().start(() -> {
-    System.out.println("Going to the bathroom");
+    IO.println("Going to the bathroom");
     Thread.sleep(Duration.ofMillis(500));
-    System.out.println("Done with the bath");
+    IO.println("Done with the bath");
 });
 
 // Inside VirtualThread (JDK source code)
@@ -1085,12 +1085,12 @@ Look at the table. Continuation, suspension, resume, visibility. Three columns, 
 
 Scala: you choose where to suspend. Kotlin: the compiler chooses. Java: the JVM chooses.
 
-More control means more work. More transparency means less control. There's no winner here. It's a spectrum. Your project decides where you belong on it.
+More control means more work. More transparency means less control. It's a matter of trade-offs.
 -->
 
 ---
 
-# One-Shot vs. Multi-Shot
+# ...Just One More Thing: One-Shot vs. Multi-Shot
 
 Not all the continuations we create are the same:
 
